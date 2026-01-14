@@ -3,6 +3,7 @@ package frc.robot;
 import com.ctre.phoenix6.SignalLogger;
 import com.ctre.phoenix6.swerve.SwerveDrivetrain.SwerveDriveState;
 
+import dev.doglog.DogLog;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveModulePosition;
@@ -25,8 +26,7 @@ public class Telemetry {
 
     /**
      * Construct a telemetry object, with the specified max speed of the robot
-     * 
-     * @param maxSpeed Maximum speed in meters per second
+     * * @param maxSpeed Maximum speed in meters per second
      */
     public Telemetry(double maxSpeed) {
         MaxSpeed = maxSpeed;
@@ -94,6 +94,14 @@ public class Telemetry {
         driveModulePositions.set(state.ModulePositions);
         driveTimestamp.set(state.Timestamp);
         driveOdometryFrequency.set(1.0 / state.OdometryPeriod);
+
+        /* DogLog Integration */
+        DogLog.log("DriveState/Pose", state.Pose);
+        DogLog.log("DriveState/Speeds", state.Speeds);
+        DogLog.log("DriveState/ModuleStates", state.ModuleStates);
+        DogLog.log("DriveState/ModuleTargets", state.ModuleTargets);
+        DogLog.log("DriveState/ModulePositions", state.ModulePositions);
+        DogLog.log("DriveState/OdometryPeriod", state.OdometryPeriod);
 
         /* Also write to log file */
         SignalLogger.writeStruct("DriveState/Pose", Pose2d.struct, state.Pose);

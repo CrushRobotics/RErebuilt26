@@ -11,6 +11,8 @@ import com.ctre.phoenix6.swerve.SwerveRequest;
 
 import dev.doglog.DogLog;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.util.sendable.Sendable;
+import edu.wpi.first.util.sendable.SendableBuilder;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
@@ -51,6 +53,28 @@ public class RobotContainer {
         
         // Push the field object to SmartDashboard for Elastic
         SmartDashboard.putData("Field", field);
+
+        // Add Swerve Drive State for Elastic (SwerveDrive Widget)
+        SmartDashboard.putData("Swerve Drive", new Sendable() {
+            @Override
+            public void initSendable(SendableBuilder builder) {
+                builder.setSmartDashboardType("SwerveDrive");
+
+                builder.addDoubleProperty("Front Left Angle", () -> drivetrain.getState().ModuleStates[0].angle.getRadians(), null);
+                builder.addDoubleProperty("Front Left Velocity", () -> drivetrain.getState().ModuleStates[0].speedMetersPerSecond, null);
+
+                builder.addDoubleProperty("Front Right Angle", () -> drivetrain.getState().ModuleStates[1].angle.getRadians(), null);
+                builder.addDoubleProperty("Front Right Velocity", () -> drivetrain.getState().ModuleStates[1].speedMetersPerSecond, null);
+
+                builder.addDoubleProperty("Back Left Angle", () -> drivetrain.getState().ModuleStates[2].angle.getRadians(), null);
+                builder.addDoubleProperty("Back Left Velocity", () -> drivetrain.getState().ModuleStates[2].speedMetersPerSecond, null);
+
+                builder.addDoubleProperty("Back Right Angle", () -> drivetrain.getState().ModuleStates[3].angle.getRadians(), null);
+                builder.addDoubleProperty("Back Right Velocity", () -> drivetrain.getState().ModuleStates[3].speedMetersPerSecond, null);
+
+                builder.addDoubleProperty("Robot Angle", () -> drivetrain.getState().Pose.getRotation().getRadians(), null);
+            }
+        });
 
         configureBindings();
     }
@@ -93,6 +117,32 @@ public class RobotContainer {
         drivetrain.registerTelemetry(state -> {
             logger.telemeterize(state);
             field.setRobotPose(state.Pose);
+            
+            // Update individual module poses for visualization (this creates the "icon map")
+            var modulePoses = state.ModuleStates; // Or calculate actual poses if available
+            // Note: Since CTRE 6 swerve state gives ModuleStates (velocity/angle) and ModulePositions (distance/angle),
+            // visualizing them on Field2d usually requires constructing Pose2d objects for each module relative to the robot.
+            // However, Elastic's Swerve Widget often just needs the ModuleStates array published to NT, which Telemetry.java handles.
+            // If you specifically want them on the Field2d widget as icons:
+            
+            // Get module locations from constants to calculate their field pose
+             var moduleLocations = drivetrain.getModuleLocations();
+             var robotPose = state.Pose;
+             
+             for (int i = 0; i < moduleLocations.length; i++) {
+                 var moduleLocation = moduleLocations[i];
+                 var moduleState = state.ModuleStates[i];
+                 
+                 // Calculate module pose in field coordinates
+                 var modulePose = robotPose.transformBy(
+                     new edu.wpi.first.math.geometry.Transform2d(
+                         moduleLocation, 
+                         moduleState.angle
+                     )
+                 );
+                 
+                 field.getObject("Module " + i).setPose(modulePose);
+             }
         });
     }
 

@@ -11,6 +11,8 @@ import com.ctre.phoenix6.swerve.SwerveRequest;
 
 import dev.doglog.DogLog;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.wpilibj.smartdashboard.Field2d;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
@@ -40,10 +42,16 @@ public class RobotContainer {
 
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
 
+    // Elastic Dashboard Field Visualization
+    private final Field2d field = new Field2d();
+
     public RobotContainer() {
         // Optional: Initialize DogLog options here if needed, e.g.:
         // DogLog.setOptions(new DogLogOptions()...);
         
+        // Push the field object to SmartDashboard for Elastic
+        SmartDashboard.putData("Field", field);
+
         configureBindings();
     }
 
@@ -81,7 +89,11 @@ public class RobotContainer {
         // Reset the field-centric heading on left bumper press.
         joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
 
-        drivetrain.registerTelemetry(logger::telemeterize);
+        // Register telemetry and update the Field2d object for Elastic
+        drivetrain.registerTelemetry(state -> {
+            logger.telemeterize(state);
+            field.setRobotPose(state.Pose);
+        });
     }
 
     public Command getAutonomousCommand() {

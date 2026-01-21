@@ -81,7 +81,6 @@ public class TunerConstants {
     private static final double kCoupleRatio = 3.5714285714285716;
 
     private static final double kDriveGearRatio = 6.122448979591837;
-    // 12.8 is correct for standard SDS MK4 modules
     private static final double kSteerGearRatio = 12.8;
     private static final Distance kWheelRadius = Inches.of(2);
 
@@ -130,7 +129,7 @@ public class TunerConstants {
     private static final int kFrontLeftDriveMotorId = 2;
     private static final int kFrontLeftSteerMotorId = 1;
     private static final int kFrontLeftEncoderId = 11;
-    private static final Angle kFrontLeftEncoderOffset = Rotations.of(-0.1572265625);
+    private static final Angle kFrontLeftEncoderOffset = Rotations.of(-0.11572265625);
     private static final boolean kFrontLeftSteerMotorInverted = false;
     private static final boolean kFrontLeftEncoderInverted = false;
 
@@ -141,7 +140,7 @@ public class TunerConstants {
     private static final int kFrontRightDriveMotorId = 8;
     private static final int kFrontRightSteerMotorId = 7;
     private static final int kFrontRightEncoderId = 44;
-    private static final Angle kFrontRightEncoderOffset = Rotations.of(0.336181640625);
+    private static final Angle kFrontRightEncoderOffset = Rotations.of(-0.0341796875);
     private static final boolean kFrontRightSteerMotorInverted = false;
     private static final boolean kFrontRightEncoderInverted = false;
 
@@ -152,7 +151,7 @@ public class TunerConstants {
     private static final int kBackLeftDriveMotorId = 4;
     private static final int kBackLeftSteerMotorId = 3;
     private static final int kBackLeftEncoderId = 22;
-    private static final Angle kBackLeftEncoderOffset = Rotations.of(0.299560546875);
+    private static final Angle kBackLeftEncoderOffset = Rotations.of(0.423095703125);
     private static final boolean kBackLeftSteerMotorInverted = false;
     private static final boolean kBackLeftEncoderInverted = false;
 
@@ -163,7 +162,7 @@ public class TunerConstants {
     private static final int kBackRightDriveMotorId = 6;
     private static final int kBackRightSteerMotorId = 5;
     private static final int kBackRightEncoderId = 33;
-    private static final Angle kBackRightEncoderOffset = Rotations.of(-0.13525390625);
+    private static final Angle kBackRightEncoderOffset = Rotations.of(0.196533203125);
     private static final boolean kBackRightSteerMotorInverted = false;
     private static final boolean kBackRightEncoderInverted = false;
 
@@ -236,8 +235,8 @@ public class TunerConstants {
          *
          * @param drivetrainConstants     Drivetrain-wide constants for the swerve drive
          * @param odometryUpdateFrequency The frequency to run the odometry loop. If
-         * unspecified or set to 0 Hz, this is 250 Hz on
-         * CAN FD, and 100 Hz on CAN 2.0.
+         *                                unspecified or set to 0 Hz, this is 250 Hz on
+         *                                CAN FD, and 100 Hz on CAN 2.0.
          * @param modules                 Constants for each specific module
          */
         public TunerSwerveDrivetrain(
@@ -260,14 +259,14 @@ public class TunerConstants {
          *
          * @param drivetrainConstants       Drivetrain-wide constants for the swerve drive
          * @param odometryUpdateFrequency   The frequency to run the odometry loop. If
-         * unspecified or set to 0 Hz, this is 250 Hz on
-         * CAN FD, and 100 Hz on CAN 2.0.
+         *                                  unspecified or set to 0 Hz, this is 250 Hz on
+         *                                  CAN FD, and 100 Hz on CAN 2.0.
          * @param odometryStandardDeviation The standard deviation for odometry calculation
-         * in the form [x, y, theta]ᵀ, with units in meters
-         * and radians
+         *                                  in the form [x, y, theta]ᵀ, with units in meters
+         *                                  and radians
          * @param visionStandardDeviation   The standard deviation for vision calculation
-         * in the form [x, y, theta]ᵀ, with units in meters
-         * and radians
+         *                                  in the form [x, y, theta]ᵀ, with units in meters
+         *                                  and radians
          * @param modules                   Constants for each specific module
          */
         public TunerSwerveDrivetrain(

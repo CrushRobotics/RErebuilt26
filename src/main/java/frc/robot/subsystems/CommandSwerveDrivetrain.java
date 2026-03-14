@@ -35,12 +35,13 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
 
     private static final double kSimSteerGearRatio = 12.8;
 
-    // SIM: manually tracked yaw integrated from chassis speeds
-    private double m_simYawDeg = 0.0;
-
-    // SIM: deadband to filter phantom omega — any rotation below this is ignored.
-    // Set just above the phantom value so real commanded rotation still works.
-    private static final double kSimOmegaDeadbandRadPerSec = 0.1;
+    // SIM: Temporary toggle to ignore rotation commands in simulation.
+    // Set to 'true' to drivetest translation without your broken Xbox controller mapping causing a permanent spin.
+    // Set to 'false' once you fix your joystick axis mappings!
+    private static final boolean kSimMuteRotation = false;
+    
+    // SIM: Deadband to ignore slight axis drift from the simulator joystick/triggers
+    private static final double kSimRotationalDeadbandRadPerSec = 0.2;
 
     private static final Rotation2d kBlueAlliancePerspectiveRotation = Rotation2d.kZero;
     private static final Rotation2d kRedAlliancePerspectiveRotation = Rotation2d.k180deg;
@@ -132,7 +133,48 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     }
 
     public Command applyRequest(Supplier<SwerveRequest> request) {
-        return run(() -> this.setControl(request.get()));
+        return run(() -> {
+            SwerveRequest req = request.get();
+
+            // Force the request to be Field-Centric
+            if (req instanceof SwerveRequest.RobotCentric robotReq) {
+                req = new SwerveRequest.FieldCentric()
+                    .withVelocityX(robotReq.VelocityX)
+                    .withVelocityY(robotReq.VelocityY)
+                    .withRotationalRate(robotReq.RotationalRate)
+                    .withDriveRequestType(robotReq.DriveRequestType)
+                    .withSteerRequestType(robotReq.SteerRequestType);
+            }
+
+            // Intercept the request in simulation to apply deadbands or muting
+            if (Utils.isSimulation()) {
+                double rotRate = 0.0;
+                
+                if (req instanceof SwerveRequest.FieldCentric fieldReq) {
+                    rotRate = fieldReq.RotationalRate;
+                } else if (req instanceof SwerveRequest.RobotCentric robotReq) {
+                    rotRate = robotReq.RotationalRate;
+                }
+
+                // Apply deadband to ignore trigger resting voltages and stick drift
+                if (Math.abs(rotRate) < kSimRotationalDeadbandRadPerSec) {
+                    rotRate = 0.0;
+                }
+
+                // Apply full mute if toggled
+                if (kSimMuteRotation) {
+                    rotRate = 0.0;
+                }
+
+                if (req instanceof SwerveRequest.FieldCentric fieldReq) {
+                    req = fieldReq.withRotationalRate(rotRate);
+                } else if (req instanceof SwerveRequest.RobotCentric robotReq) {
+                    req = robotReq.withRotationalRate(rotRate);
+                }
+            }
+
+            this.setControl(req);
+        });
     }
 
     public Command sysIdQuasistatic(SysIdRoutine.Direction direction) {
@@ -158,30 +200,10 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         DogLog.log("Sim/PoseYawDeg", getState().Pose.getRotation().getDegrees());
         DogLog.log("Sim/PigeonYawDeg", getPigeon2().getYaw().getValueAsDouble());
         DogLog.log("Sim/ChassisOmegaRadPerSec", getState().Speeds.omegaRadiansPerSecond);
-        DogLog.log("Sim/SimYawDeg", m_simYawDeg);
     }
 
     private void startSimThread() {
         m_lastSimTime = Utils.getCurrentTimeSeconds();
-
-        @SuppressWarnings("unchecked")
-        SwerveModuleConstants<?, ?, ?>[] moduleConstants = new SwerveModuleConstants[] {
-            TunerConstants.FrontLeft,
-            TunerConstants.FrontRight,
-            TunerConstants.BackLeft,
-            TunerConstants.BackRight
-        };
-
-        for (int i = 0; i < 4; i++) {
-            double offsetRotations = moduleConstants[i].EncoderOffset;
-            var module = getModule(i);
-
-            module.getEncoder().getSimState().setRawPosition(-offsetRotations);
-            module.getSteerMotor().getSimState().setRawRotorPosition(-offsetRotations * kSimSteerGearRatio);
-            module.getSteerMotor().getSimState().setRotorVelocity(0);
-            module.getDriveMotor().getSimState().setRawRotorPosition(0);
-            module.getDriveMotor().getSimState().setRotorVelocity(0);
-        }
 
         m_simNotifier = new Notifier(() -> {
             final double currentTime = Utils.getCurrentTimeSeconds();
@@ -190,13 +212,8 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
 
             deltaTime = Math.min(deltaTime, 2 * kSimLoopPeriod);
 
+            // CTRE automatically handles the Pigeon yaw updates inside this method natively.
             updateSimState(deltaTime, RobotController.getBatteryVoltage());
-
-        
-        double omega = getState().Speeds.omegaRadiansPerSecond;
-        double correctedOmega = omega - 4.452;
-        m_simYawDeg += Math.toDegrees(correctedOmega) * deltaTime;
-        getPigeon2().getSimState().setRawYaw(m_simYawDeg);
         });
         m_simNotifier.startPeriodic(kSimLoopPeriod);
     }

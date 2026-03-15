@@ -37,6 +37,9 @@ public class RobotContainer {
     private final AutonomousLogic autonomousLogic;
 
     private final Field2d field = new Field2d();
+    
+    // RESTORED: Instantiate the CTRE Telemetry logger that feeds AdvantageScope
+    private final Telemetry logger = new Telemetry(MaxSpeed);
 
     public RobotContainer() {
         SmartDashboard.putData("Field", field);
@@ -72,7 +75,18 @@ public class RobotContainer {
         joystick.start().and(joystick.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
 
         drivetrain.registerTelemetry(state -> {
+            // Update SmartDashboard Field
             field.setRobotPose(state.Pose);
+            
+            // RESTORED: Call the original CTRE Telemetry hook 
+            // This natively formats data for AdvantageScope / SignalLogger
+            logger.telemeterize(state);
+            
+            // ADDED: DogLog records for native AdvantageScope Swerve Module visualizers
+            DogLog.log("Drive/Pose", state.Pose);
+            DogLog.log("Drive/ModuleStates", state.ModuleStates);
+            DogLog.log("Drive/ModuleTargets", state.ModuleTargets);
+
             // Log vision status to clear unused warning
             DogLog.log("Vision/EstimatorActive", vision != null);
         });

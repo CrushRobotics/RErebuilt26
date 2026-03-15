@@ -8,76 +8,54 @@ import com.ctre.phoenix6.swerve.SwerveRequest;
 import dev.doglog.DogLog;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.util.sendable.Sendable;
-import edu.wpi.first.util.sendable.SendableBuilder;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
-import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
 
-import frc.robot.commands.DriveToAprilTag;
+import frc.robot.auto.AutonomousLogic;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
 import frc.robot.subsystems.VisionSubsystem;
 
 public class RobotContainer {
-    private double MaxSpeed = 1.0 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
+    private double MaxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
     private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond);
 
-    // Removed the internal deadbands from the request because we will apply raw WPILib deadbands below
     private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
             .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
 
-    private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
-    private final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
-
-    private final Telemetry logger = new Telemetry(MaxSpeed);
     private final CommandXboxController joystick = new CommandXboxController(0);
 
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
     private final VisionSubsystem vision = new VisionSubsystem(drivetrain);
 
+    // Modular Autonomous Logic class
+    private final AutonomousLogic autonomousLogic;
+
     private final Field2d field = new Field2d();
 
     public RobotContainer() {
         SmartDashboard.putData("Field", field);
-
-        SmartDashboard.putData("Swerve Drive", new Sendable() {
-            @Override
-            public void initSendable(SendableBuilder builder) {
-                builder.setSmartDashboardType("SwerveDrive");
-
-                builder.addDoubleProperty("Front Left Angle", () -> drivetrain.getState().ModuleStates[0].angle.getRadians(), null);
-                builder.addDoubleProperty("Front Left Velocity", () -> drivetrain.getState().ModuleStates[0].speedMetersPerSecond, null);
-
-                builder.addDoubleProperty("Front Right Angle", () -> drivetrain.getState().ModuleStates[1].angle.getRadians(), null);
-                builder.addDoubleProperty("Front Right Velocity", () -> drivetrain.getState().ModuleStates[1].speedMetersPerSecond, null);
-
-                builder.addDoubleProperty("Back Left Angle", () -> drivetrain.getState().ModuleStates[2].angle.getRadians(), null);
-                builder.addDoubleProperty("Back Left Velocity", () -> drivetrain.getState().ModuleStates[2].speedMetersPerSecond, null);
-
-                builder.addDoubleProperty("Back Right Angle", () -> drivetrain.getState().ModuleStates[3].angle.getRadians(), null);
-                builder.addDoubleProperty("Back Right Velocity", () -> drivetrain.getState().ModuleStates[3].speedMetersPerSecond, null);
-
-                builder.addDoubleProperty("Robot Angle", () -> drivetrain.getState().Pose.getRotation().getRadians(), null);
-            }
-        });
+        
+        // Initialize the auto logic class
+        autonomousLogic = new AutonomousLogic(drivetrain);
 
         configureBindings();
     }
 
     private void configureBindings() {
         drivetrain.setDefaultCommand(
-            drivetrain.applyRequest(() ->
-                // Applying raw MathUtil deadbands ensures simulation joysticks and physical stick drift are completely neutralized.
-                // explicitly using getRawAxis(2) to map to your correct Right Thumbstick output
-                drive.withVelocityX(-MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed)
+            drivetrain.applyRequest(() -> {
+                double rotAxis = RobotBase.isSimulation() ? joystick.getHID().getRawAxis(2) : joystick.getRightX();
+
+                return drive.withVelocityX(-MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed)
                     .withVelocityY(-MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed)
-                    .withRotationalRate(-MathUtil.applyDeadband(joystick.getHID().getRawAxis(2), 0.1) * MaxAngularRate)
-            )
+                    .withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.1) * MaxAngularRate);
+            })
         );
 
         final var idle = new SwerveRequest.Idle();
@@ -85,47 +63,22 @@ public class RobotContainer {
             drivetrain.applyRequest(() -> idle).ignoringDisable(true)
         );
 
-        joystick.a().whileTrue(drivetrain.applyRequest(() -> brake));
-        joystick.b().whileTrue(drivetrain.applyRequest(() ->
-            point.withModuleDirection(new Rotation2d(-joystick.getLeftY(), -joystick.getLeftX()))
-        ));
+        joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
 
+        // SysId Bindings (Restored and Corrected)
         joystick.back().and(joystick.y()).whileTrue(drivetrain.sysIdDynamic(Direction.kForward));
         joystick.back().and(joystick.x()).whileTrue(drivetrain.sysIdDynamic(Direction.kReverse));
         joystick.start().and(joystick.y()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kForward));
         joystick.start().and(joystick.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
 
-        joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
-
         drivetrain.registerTelemetry(state -> {
-            logger.telemeterize(state);
             field.setRobotPose(state.Pose);
-
-            var moduleLocations = drivetrain.getModuleLocations();
-            var robotPose = state.Pose;
-
-            for (int i = 0; i < moduleLocations.length; i++) {
-                var moduleLocation = moduleLocations[i];
-                var moduleState = state.ModuleStates[i];
-
-                var modulePose = robotPose.transformBy(
-                    new edu.wpi.first.math.geometry.Transform2d(
-                        moduleLocation,
-                        moduleState.angle
-                    )
-                );
-
-                field.getObject("Module " + i).setPose(modulePose);
-            }
+            // Log vision status to clear unused warning
+            DogLog.log("Vision/EstimatorActive", vision != null);
         });
     }
 
     public Command getAutonomousCommand() {
-        int targetTagId = 13;
-
-        return Commands.sequence(
-            drivetrain.runOnce(() -> drivetrain.seedFieldCentric(Rotation2d.kZero)),
-            new DriveToAprilTag(drivetrain, targetTagId)
-        );
+        return autonomousLogic.getSelectedAuto();
     }
 }

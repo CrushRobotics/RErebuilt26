@@ -78,22 +78,14 @@ public class DriveToAprilTag extends Command {
             return;
         }
 
-        // Convert Tag 3D pose to 2D target.
-        // Usually you want to stop *in front* of the tag, but for this example
-        // we will drive to the exact tag location 1 meter in front of it to avoid crashing.
-        // The tag rotation is facing OUT from the wall. We want to face the wall (opposite tag rotation).
-        Pose2d targetPose = targetTagPose.toPose2d();
         
-        // Offset target by 1 meter in front of the tag so we don't hit the wall.
-        // Tag rotation usually points OUT of the wall. 
-        // So moving +1.0 meter in the direction of the tag's rotation puts us 1m away.
+        Pose2d targetPose = targetTagPose.toPose2d();
         Translation2d offset = new Translation2d(1.0, targetPose.getRotation());
         Pose2d driveTarget = new Pose2d(
             targetPose.getTranslation().plus(offset), 
             targetPose.getRotation().rotateBy(Rotation2d.fromDegrees(180)) // Face the tag
         );
 
-        // Config for trajectory
         TrajectoryConfig config = new TrajectoryConfig(
             kMaxSpeedMetersPerSecond * 0.5, // Run at half speed for safety
             kMaxAccelerationMetersPerSecondSquared

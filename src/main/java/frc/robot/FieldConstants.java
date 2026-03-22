@@ -11,7 +11,6 @@ public final class FieldConstants {
     public static final double FIELD_WIDTH_METERS = Units.inchesToMeters(316.64);
     public static final Map<Integer, Pose3d> APRIL_TAG_FIELD_LAYOUT = Map.ofEntries(
         
-        
         // ID 1: Trench
         Map.entry(1, new Pose3d(Units.inchesToMeters(467.64), Units.inchesToMeters(292.31), Units.inchesToMeters(35.00), new Rotation3d(0, 0, Units.degreesToRadians(180)))),
         // ID 2: Hub
@@ -84,8 +83,8 @@ public final class FieldConstants {
     // Height of the Hub opening
     public static final double HUB_HEIGHT_METERS = 1.82; 
 
-    // TODO: Measure the physical exit height of the fuel from your shooter/hood on your 2026 robot
-    public static final double ROBOT_SHOOTER_HEIGHT_METERS = 0.8; 
+    // The physical exit height of the fuel from the shooter/hood
+    public static final double ROBOT_SHOOTER_HEIGHT_METERS = Units.inchesToMeters(12.065); 
 
     // Hub Coordinates based on 2026 Field Dimensions
     public static final double RED_HUB_X = Units.inchesToMeters(651.22 - 182.11);

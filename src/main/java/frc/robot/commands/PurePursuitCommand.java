@@ -13,6 +13,7 @@ import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.trajectory.TrapezoidProfile;
 import edu.wpi.first.wpilibj2.command.Command;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
+import frc.robot.util.BallisticSolver.FiringSolution;
 
 import java.util.List;
 
@@ -60,7 +61,19 @@ public class PurePursuitCommand extends Command {
 
         double vx = xController.calculate(robotPos.getX(), lookaheadPoint.getX());
         double vy = yController.calculate(robotPos.getY(), lookaheadPoint.getY());
-        double omega = thetaController.calculate(currentPose.getRotation().getRadians(), desiredHeading.getRadians());
+        
+        // --- DYNAMIC AIMING LOGIC ---
+        // 1. Default to the static path heading passed into the command
+        Rotation2d currentTargetHeading = this.desiredHeading;
+        
+        // 2. Override with dynamic turret aiming if the Ballistic Solver has an active solution
+        FiringSolution firingSolution = drivetrain.getCurrentFiringSolution();
+        if (firingSolution != null) {
+            currentTargetHeading = firingSolution.chassisAimAngle;
+        }
+
+        // 3. Calculate rotational rate based on the target heading
+        double omega = thetaController.calculate(currentPose.getRotation().getRadians(), currentTargetHeading.getRadians());
 
         vx = MathUtil.clamp(vx, -3.0, 3.0);
         vy = MathUtil.clamp(vy, -3.0, 3.0);

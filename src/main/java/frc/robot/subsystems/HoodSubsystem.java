@@ -14,7 +14,6 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import dev.doglog.DogLog;
 
 public class HoodSubsystem extends SubsystemBase {
-    // TODO: Set your actual CAN ID for the Hood motor
     private static final int HOOD_MOTOR_ID = 15; 
     private static final double GEAR_RATIO = 250.0;
 
@@ -38,11 +37,10 @@ public class HoodSubsystem extends SubsystemBase {
         // TODO: Tune these PID values for your Hood
         config.closedLoop.pid(0.05, 0.0, 0.0);
 
-        // TODO: VERY IMPORTANT - Set soft limits so you don't break your hood!
-        // config.softLimit.forwardSoftLimit(60.0f); // Max degrees
-        // config.softLimit.reverseSoftLimit(0.0f);  // Min degrees
-        // config.softLimit.forwardSoftLimitEnabled(true);
-        // config.softLimit.reverseSoftLimitEnabled(true);
+        config.softLimit.forwardSoftLimit(70.0f);
+         config.softLimit.reverseSoftLimit(0.0f);  
+         config.softLimit.forwardSoftLimitEnabled(true);
+         config.softLimit.reverseSoftLimitEnabled(true);
 
         // Apply the configuration to the motor and burn to flash
         hoodMotor.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);

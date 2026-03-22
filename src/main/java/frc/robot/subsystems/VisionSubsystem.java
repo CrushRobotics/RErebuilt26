@@ -21,19 +21,22 @@ import frc.robot.FieldConstants;
 public class VisionSubsystem extends SubsystemBase {
 
     // -------------------------------------------------------------------------
-    // PLACEHOLDERS — replace names and transforms with real values
+    // TODO: Replace placeholder camera names with the actual hostnames from PhotonVision
     // -------------------------------------------------------------------------
     private static final String CAMERA_1_NAME = "Placeholder 1";
     private static final String CAMERA_2_NAME = "Placeholder 2";
     private static final String CAMERA_3_NAME = "Placeholder 3";
 
+    // -------------------------------------------------------------------------
+    // TODO: Measure and enter the exact 3D physical transforms of your cameras
     // Transform3d = robot center -> camera (x forward, y left, z up, in meters)
+    // -------------------------------------------------------------------------
     private static final Transform3d CAMERA_1_TRANSFORM = new Transform3d(
-        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 0, 0)); // Placeholder 1
+        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 0, 0)); 
     private static final Transform3d CAMERA_2_TRANSFORM = new Transform3d(
-        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 0, 0)); // Placeholder 2
+        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 0, 0)); 
     private static final Transform3d CAMERA_3_TRANSFORM = new Transform3d(
-        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 0, 0)); // Placeholder 3
+        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 0, 0)); 
     // -------------------------------------------------------------------------
 
     private final CommandSwerveDrivetrain drivetrain;

@@ -33,6 +33,7 @@ public class DriveToPose extends Command {
         double maxAngularRate = Math.PI * 2; // Approx 1 rotation per second
 
         // PID Profile Constraints (Max Velocity, Max Acceleration)
+        // TODO: Tune maximum translational and angular accelerations
         var constraints = new TrapezoidProfile.Constraints(
             maxSpeed, 
             2.0 // Max acceleration m/s^2 (Tune this for how snappy you want it)
@@ -42,8 +43,8 @@ public class DriveToPose extends Command {
             Math.PI // Max angular acceleration rad/s^2
         );
 
-        // PID Constants (kP, kI, kD) - These are tuned for simulation
-        // You might need to adjust these for the real robot.
+        // PID Constants (kP, kI, kD) - These are currently tuned for simulation.
+        // TODO: Adjust these positional ProfiledPID constants for the real robot.
         xController = new ProfiledPIDController(2.0, 0, 0, constraints);
         yController = new ProfiledPIDController(2.0, 0, 0, constraints);
         thetaController = new ProfiledPIDController(4.0, 0, 0, thetaConstraints);
@@ -52,6 +53,7 @@ public class DriveToPose extends Command {
         thetaController.enableContinuousInput(-Math.PI, Math.PI);
         
         // Tolerances - When are we "close enough"?
+        // TODO: Validate these tolerances are tight enough for scoring but loose enough to not oscillate
         xController.setTolerance(0.05); // 5 cm
         yController.setTolerance(0.05); // 5 cm
         thetaController.setTolerance(0.05); // ~3 degrees

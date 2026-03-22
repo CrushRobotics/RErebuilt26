@@ -29,9 +29,11 @@ public class PurePursuitCommand extends Command {
     private final SwerveRequest.FieldCentric driveRequest = new SwerveRequest.FieldCentric()
             .withDriveRequestType(DriveRequestType.Velocity);
 
+    // TODO: Tune Pure Pursuit lookahead distance. (Larger = smoother but cuts corners; Smaller = tighter but may oscillate)
     private final double lookaheadDistanceMeters = 0.6; 
     private final double completionToleranceMeters = 0.1;
 
+    // TODO: Tune Pure Pursuit PID controllers for your real robot's mass and drivetrain dynamics
     private final PIDController xController = new PIDController(4.0, 0.0, 0.0);
     private final PIDController yController = new PIDController(4.0, 0.0, 0.0);
     private final ProfiledPIDController thetaController = new ProfiledPIDController(

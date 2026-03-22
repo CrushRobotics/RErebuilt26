@@ -26,6 +26,8 @@ import frc.robot.subsystems.IndexerSubsystem;
 import frc.robot.subsystems.ShooterSubsystem;
 import frc.robot.subsystems.VisionSubsystem;
 import frc.robot.util.BallisticSolver.FiringSolution;
+// TODO: Import ClimberSubsystem once implemented
+// import frc.robot.subsystems.ClimberSubsystem;
 
 public class RobotContainer {
     private double MaxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
@@ -35,6 +37,8 @@ public class RobotContainer {
     private final SwerveRequest.FieldCentricFacingAngle autoAimDrive = new SwerveRequest.FieldCentricFacingAngle().withDriveRequestType(DriveRequestType.OpenLoopVoltage);
 
     private final CommandXboxController joystick = new CommandXboxController(0);
+    // TODO: Initialize Operator Controller for secondary mechanisms
+    // private final CommandXboxController operatorJoystick = new CommandXboxController(1);
 
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
     private final VisionSubsystem vision = new VisionSubsystem(drivetrain);
@@ -43,6 +47,8 @@ public class RobotContainer {
     private final ShooterSubsystem shooter = new ShooterSubsystem();
     private final HoodSubsystem hood = new HoodSubsystem();
     private final IndexerSubsystem indexer = new IndexerSubsystem();
+    // TODO: Initialize ClimberSubsystem once implemented
+    // private final ClimberSubsystem climber = new ClimberSubsystem();
 
     private final AutonomousLogic autonomousLogic;
     private final Field2d field = new Field2d();
@@ -119,6 +125,9 @@ public class RobotContainer {
                 indexer.stopFeeder();
             })
         );
+
+        // TODO: Map bindings for intaking game pieces
+        // TODO: Map bindings for the climber subsystem
     }
 
     public Command getAutonomousCommand() { return autonomousLogic.getSelectedAuto(); }

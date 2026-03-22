@@ -4,11 +4,6 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 
-/**
- * Ported and adapted from Team 7520's 2026 Repository.
- * Solves the kinematic parabolic arc of a game piece to find the required
- * Chassis angle, Hood angle, and Time of Flight.
- */
 public class BallisticSolver {
     private static final double GRAVITY = 9.81;
 

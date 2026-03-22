@@ -39,11 +39,12 @@ public class DriveToAprilTag extends Command {
 
     // Configuration
     private static final double kMaxSpeedMetersPerSecond = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
-    private static final double kMaxAccelerationMetersPerSecondSquared = 3.0;
+    private static final double kMaxAccelerationMetersPerSecondSquared = 3.0; // TODO: Tune maximum acceleration
     private static final double kMaxAngularSpeedRadiansPerSecond = Math.PI;
-    private static final double kMaxAngularAccelerationRadiansPerSecondSquared = Math.PI;
+    private static final double kMaxAngularAccelerationRadiansPerSecondSquared = Math.PI; // TODO: Tune maximum angular acceleration
 
-    // PIDs (Tune these!)
+    // PIDs
+    // TODO: Tune these HolonomicDriveController PID values for real-world following
     private static final double kPXController = 1.0;
     private static final double kPYController = 1.0;
     private static final double kPThetaController = 1.0;

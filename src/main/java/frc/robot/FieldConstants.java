@@ -9,11 +9,8 @@ public final class FieldConstants {
 
     public static final double FIELD_LENGTH_METERS = Units.inchesToMeters(651.22);
     public static final double FIELD_WIDTH_METERS = Units.inchesToMeters(316.64);
-
-    // Official AprilTag field layout for REBUILT 2026
-    // Coordinates derived from GE-26000 Series Field Drawings
     public static final Map<Integer, Pose3d> APRIL_TAG_FIELD_LAYOUT = Map.ofEntries(
-        // --- RED ALLIANCE SIDE ---
+        
         
         // ID 1: Trench
         Map.entry(1, new Pose3d(Units.inchesToMeters(467.64), Units.inchesToMeters(292.31), Units.inchesToMeters(35.00), new Rotation3d(0, 0, Units.degreesToRadians(180)))),
@@ -82,4 +79,22 @@ public final class FieldConstants {
         // ID 32
         Map.entry(32, new Pose3d(Units.inchesToMeters(0.32), Units.inchesToMeters(164.47), Units.inchesToMeters(21.75), new Rotation3d(0, 0, Units.degreesToRadians(0))))
     );
+
+    // --- BALLISTIC SOLVER TARGETS ---
+    // Height of the Hub opening
+    public static final double HUB_HEIGHT_METERS = 1.82; 
+
+    // TODO: Measure the physical exit height of the fuel from your shooter/hood on your 2026 robot
+    public static final double ROBOT_SHOOTER_HEIGHT_METERS = 0.8; 
+
+    // Hub Coordinates based on 2026 Field Dimensions
+    public static final double RED_HUB_X = Units.inchesToMeters(651.22 - 182.11);
+    public static final double RED_HUB_Y = Units.inchesToMeters(158.84);
+    
+    public static final double BLUE_HUB_X = Units.inchesToMeters(182.11);
+    public static final double BLUE_HUB_Y = Units.inchesToMeters(158.84);
+
+    // The True 3D Targets
+    public static final Pose3d BLUE_GOAL_POSE = new Pose3d(BLUE_HUB_X, BLUE_HUB_Y, HUB_HEIGHT_METERS, new Rotation3d());
+    public static final Pose3d RED_GOAL_POSE = new Pose3d(RED_HUB_X, RED_HUB_Y, HUB_HEIGHT_METERS, new Rotation3d());
 }

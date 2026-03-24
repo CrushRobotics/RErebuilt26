@@ -16,16 +16,12 @@ import dev.doglog.DogLog;
 public class HoodSubsystem extends SubsystemBase {
     // TODO: Verify CAN ID for the Hood Motor
     private static final int HOOD_MOTOR_ID = 15; 
-    
-    // TODO: Verify physical gear ratio for the Hood
     private static final double GEAR_RATIO = 250.0;
-
     private final SparkMax hoodMotor;
     private final RelativeEncoder hoodEncoder;
     private final SparkClosedLoopController hoodPid;
 
     public HoodSubsystem() {
-        // Initialize NEO using the new 2025+ API
         hoodMotor = new SparkMax(HOOD_MOTOR_ID, MotorType.kBrushless);
         
         // Create a new configuration object
@@ -40,7 +36,7 @@ public class HoodSubsystem extends SubsystemBase {
         // TODO: Tune closed-loop PID values for your Hood's mass
         config.closedLoop.pid(0.05, 0.0, 0.0);
 
-        // TODO: Verify soft limits are physically safe on the real robot
+        
         config.softLimit.forwardSoftLimit(70.0f);
         config.softLimit.reverseSoftLimit(0.0f);  
         config.softLimit.forwardSoftLimitEnabled(true);

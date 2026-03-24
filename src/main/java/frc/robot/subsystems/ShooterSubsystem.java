@@ -19,13 +19,14 @@ public class ShooterSubsystem extends SubsystemBase {
     // IMPORTANT: Verify the physical diameter of your shooter wheels (e.g., 4 inches)
     private static final double WHEEL_DIAMETER_METERS = Units.inchesToMeters(4.0);
     
-    // IMPORTANT: If your Kraken isn't 1:1 direct drive with the wheel, set the ratio here
-    private static final double GEAR_RATIO = 1.0; 
+    // GEARING: Krakens to Shooter Wheels is 1:1.6 (Overdrive).
+    // 1 rotation of the motor = 1.6 rotations of the wheel.
+    private static final double WHEEL_ROTATIONS_PER_MOTOR_ROTATION = 1.6; 
 
     private final TalonFX leftMotor;
     private final TalonFX rightMotor;
 
-    // CTRE Phoenix 6 Velocity control request
+    // CTRE Phoenix 6 Velocity control request (Voltage-based is usually best for flywheels)
     private final VelocityVoltage velocityRequest = new VelocityVoltage(0).withSlot(0);
     
     private double currentTargetRpm = 0.0;
@@ -36,20 +37,34 @@ public class ShooterSubsystem extends SubsystemBase {
 
         TalonFXConfiguration config = new TalonFXConfiguration();
         
-        // TODO: Tune Kraken PID for your specific flywheels
-        config.Slot0.kP = 0.11; 
-        config.Slot0.kI = 0.0;
-        config.Slot0.kD = 0.0;
-        config.Slot0.kV = 0.12; // Velocity Feedforward is critical for fast recovery!
+        // --- KRAKEN X60 HEAVY BRASS FLYWHEEL TUNING ---
+        // MOI: 4 lbs*in^2 requires aggressive recovery but relies heavily on Feedforward
+        
+        // kS (Static Friction): Volts needed to just break static friction (usually 0.1 - 0.25)
+        config.Slot0.kS = 0.15;
+        
+        // kV (Velocity Feedforward): Volts per RPS. 
+        // A Kraken free spins at ~100 RPS at 12V. 12V / 100RPS = 0.12 V/RPS.
+        config.Slot0.kV = 0.12; 
+        
+        // kP (Proportional): Added voltage per 1 RPS of error. 
+        // Bumped from 0.11 to 0.5 to aggressively fight the high MOI during spin-up and recovery.
+        config.Slot0.kP = 0.50; 
+        
+        config.Slot0.kI = 0.0; // Keep 0 for flywheels
+        config.Slot0.kD = 0.0; // Rarely needed for flywheels (the heavy mass dampens oscillations naturally)
 
+        // Make sure it coasts! Braking a brass flywheel will destroy your motor controllers.
         config.MotorOutput.NeutralMode = NeutralModeValue.Coast;
+        
+        // Optional but recommended for heavy flywheels: Add a stator current limit 
+        // to prevent browning out the robot during the initial massive spin-up draw
+        config.CurrentLimits.StatorCurrentLimit = 80.0; // Amps
+        config.CurrentLimits.StatorCurrentLimitEnable = true;
 
         leftMotor.getConfigurator().apply(config);
         rightMotor.getConfigurator().apply(config);
-
-        // Run the right motor as a strict follower of the left (inverted so they spin the ball out)
-        // Phoenix 6 Follower (2025/2026+) takes the MotorAlignmentValue in the constructor
-        rightMotor.setControl(new Follower(leftMotor.getDeviceID(), MotorAlignmentValue.Opposed));
+        rightMotor.setControl(new Follower(leftMotor.getDeviceID(), MotorAlignmentValue.Aligned));
     }
 
     public void setTargetVelocity(double velocityMps) {
@@ -72,6 +87,7 @@ public class ShooterSubsystem extends SubsystemBase {
         double currentRpm = leftMotor.getVelocity().getValueAsDouble() * 60.0;
         
         // Smart Gate Check: Are we within 100 RPM of the exact ballistic target?
+        // With heavy brass flywheels, you might be able to tighten this to 50 RPM once tuned.
         return Math.abs(currentRpm - targetRpm) < 100.0; 
     }
 
@@ -79,17 +95,27 @@ public class ShooterSubsystem extends SubsystemBase {
         leftMotor.setControl(new com.ctre.phoenix6.controls.DutyCycleOut(0));
         currentTargetRpm = 0;
     }
+    
+    /**
+     * Gets the current rotations of the shooter wheel.
+     * Used to spin the 3D mechanism in AdvantageScope.
+     */
+    public double getPositionRotations() {
+        // Multiply motor rotations by the gear ratio to get true wheel rotations
+        return leftMotor.getPosition().getValueAsDouble() * WHEEL_ROTATIONS_PER_MOTOR_ROTATION;
+    }
 
     /**
-     * Converts linear exit velocity (m/s) to Flywheel RPM using the circumference of the wheel.
+     * Converts linear exit velocity (m/s) to target Motor RPM.
      */
     private double convertMpsToRpm(double metersPerSecond) {
         // Linear Velocity = RPM * Circumference / 60
         // Therefore: RPM = (Velocity * 60) / (PI * Diameter)
-        double wheelRPM = (metersPerSecond * 60.0) / (Math.PI * WHEEL_DIAMETER_METERS);
+        double targetWheelRPM = (metersPerSecond * 60.0) / (Math.PI * WHEEL_DIAMETER_METERS);
         
-        // Multiply by gear ratio in case the Krakens are geared up/down relative to the wheel
-        return wheelRPM * GEAR_RATIO;
+        // Divide by the overdrive ratio to get the target MOTOR RPM
+        // e.g., to spin the wheels at 4800 RPM, the motor only needs to spin at 3000 RPM
+        return targetWheelRPM / WHEEL_ROTATIONS_PER_MOTOR_ROTATION;
     }
 
     @Override

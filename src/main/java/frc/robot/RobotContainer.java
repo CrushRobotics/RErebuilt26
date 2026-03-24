@@ -16,7 +16,6 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
-import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 
 import frc.robot.auto.AutonomousLogic;
 import frc.robot.generated.TunerConstants;
@@ -26,8 +25,7 @@ import frc.robot.subsystems.IndexerSubsystem;
 import frc.robot.subsystems.ShooterSubsystem;
 import frc.robot.subsystems.VisionSubsystem;
 import frc.robot.util.BallisticSolver.FiringSolution;
-// TODO: Import ClimberSubsystem once implemented
-// import frc.robot.subsystems.ClimberSubsystem;
+import frc.robot.subsystems.ClimberSubsystem;
 
 public class RobotContainer {
     private double MaxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
@@ -41,21 +39,45 @@ public class RobotContainer {
     // private final CommandXboxController operatorJoystick = new CommandXboxController(1);
 
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
-    private final VisionSubsystem vision = new VisionSubsystem(drivetrain);
+    
+    // SAFETY: Suppress vision in sim if no coprocessor found
+    @SuppressWarnings("unused")
+    private final VisionSubsystem vision = RobotBase.isReal() ? new VisionSubsystem(drivetrain) : null;
     
     // Combat Mechanisms
     private final ShooterSubsystem shooter = new ShooterSubsystem();
     private final HoodSubsystem hood = new HoodSubsystem();
     private final IndexerSubsystem indexer = new IndexerSubsystem();
     // TODO: Initialize ClimberSubsystem once implemented
-    // private final ClimberSubsystem climber = new ClimberSubsystem();
+    private final ClimberSubsystem climber = new ClimberSubsystem();
 
     private final AutonomousLogic autonomousLogic;
     private final Field2d field = new Field2d();
+    
+    // RESTORED: Instantiate the CTRE Telemetry logger that feeds AdvantageScope
     private final Telemetry logger = new Telemetry(MaxSpeed);
 
     public RobotContainer() {
         SmartDashboard.putData("Field", field);
+        
+        // RESTORED: Use the original CTRE Telemetry hook logic that worked previously
+        drivetrain.registerTelemetry(state -> {
+            // Update SmartDashboard Field
+            field.setRobotPose(state.Pose);
+            
+            // RESTORED: Call the original CTRE Telemetry hook 
+            // This natively formats data for AdvantageScope / SignalLogger
+            logger.telemeterize(state);
+            
+            // ADDED: DogLog records for native AdvantageScope Swerve Module visualizers
+            DogLog.log("Drive/Pose", state.Pose);
+            DogLog.log("Drive/ModuleStates", state.ModuleStates);
+            DogLog.log("Drive/ModuleTargets", state.ModuleTargets);
+
+            // Log vision status to clear unused warning
+            DogLog.log("Vision/EstimatorActive", vision != null);
+        });
+
         autonomousLogic = new AutonomousLogic(drivetrain);
         configureBindings();
     }
@@ -63,7 +85,11 @@ public class RobotContainer {
     private void configureBindings() {
         drivetrain.setDefaultCommand(
             drivetrain.applyRequest(() -> {
+                /* * ROTATION FIX: 
+                 * User identified Axis 2 for turning in simulation.
+                 */
                 double rotAxis = RobotBase.isSimulation() ? joystick.getHID().getRawAxis(2) : joystick.getRightX();
+                
                 return drive.withVelocityX(-MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed)
                     .withVelocityY(-MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed)
                     .withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.1) * MaxAngularRate);
@@ -73,28 +99,25 @@ public class RobotContainer {
         // --- TRIPLE-CHECK SMART GATE AIMING (LEFT TRIGGER) ---
         joystick.leftTrigger().whileTrue(
             Commands.parallel(
-                // Task A: Update Drivetrain Yaw
                 drivetrain.applyRequest(() -> {
                     double xVel = -MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed;
                     double yVel = -MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed;
 
-                    // Get target based on Alliance
-                    var alliance = DriverStation.getAlliance();
-                    var targetHub = (alliance.isPresent() && alliance.get() == Alliance.Red) ? 
+                    Optional<Alliance> alliance = DriverStation.getAlliance();
+                    if (alliance.isEmpty()) return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(0);
+
+                    var targetHub = (alliance.get() == Alliance.Red) ? 
                                     FieldConstants.RED_GOAL_POSE : FieldConstants.BLUE_GOAL_POSE;
 
-                    // Fetch the 3D physics solution!
                     FiringSolution solution = drivetrain.calculateFiringSolution(targetHub);
 
                     if (solution != null) {
                         return autoAimDrive.withVelocityX(xVel).withVelocityY(yVel)
                                            .withTargetDirection(solution.chassisAimAngle);
                     }
-                    // Fallback if no mathematical solution exists (e.g. directly underneath)
                     return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(0);
                 }),
 
-                // Task B: Update Mechanisms & Control Gate
                 Commands.run(() -> {
                     FiringSolution solution = drivetrain.getCurrentFiringSolution();
                     if (solution == null) {
@@ -102,17 +125,12 @@ public class RobotContainer {
                         return;
                     }
 
-                    // 1. Move Mechanisms
                     hood.setTargetAngle(solution.hoodAimAngle);
                     shooter.setTargetVelocity(solution.shotVelocityMps);
 
-                    // 2. TRIPLE GATE CHECK
-                    boolean isChassisReady = drivetrain.isChassisAimed(solution.chassisAimAngle);
-                    boolean isHoodReady = hood.isAtAngle(solution.hoodAimAngle);
-                    boolean isShooterReady = shooter.isAtVelocity(solution.shotVelocityMps);
-
-                    // 3. Fire only if all 3 are locked!
-                    if (isChassisReady && isHoodReady && isShooterReady) {
+                    if (drivetrain.isChassisAimed(solution.chassisAimAngle) && 
+                        hood.isAtAngle(solution.hoodAimAngle) && 
+                        shooter.isAtVelocity(solution.shotVelocityMps)) {
                         indexer.feedAllBalls();
                     } else {
                         indexer.stopFeeder();
@@ -128,6 +146,18 @@ public class RobotContainer {
 
         // TODO: Map bindings for intaking game pieces
         // TODO: Map bindings for the climber subsystem
+    }
+
+    /** * Called periodically to update the 3D mechanisms in telemetry. */
+    public void updateTelemetry() {
+        try {
+            logger.telemeterizeMechanisms(
+                hood.getCurrentAngleDegrees(),
+                indexer.getPositionRotations(),
+                shooter.getPositionRotations(),
+                climber.getExtensionMeters()
+            );
+        } catch (Exception e) {}
     }
 
     public Command getAutonomousCommand() { return autonomousLogic.getSelectedAuto(); }

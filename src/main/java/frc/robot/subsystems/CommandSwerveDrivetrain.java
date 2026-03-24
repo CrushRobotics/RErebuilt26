@@ -29,8 +29,8 @@ import frc.robot.util.BallisticSolver;
 import frc.robot.util.BallisticSolver.FiringSolution;
 
 public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Subsystem {
-    // ... existing setup code ...
-    private static final double kSimLoopPeriod = 0.004;
+    
+    private static final double kSimLoopPeriod = 0.005; // 5ms
     private Notifier m_simNotifier = null;
     private double m_lastSimTime;
 
@@ -41,10 +41,14 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     );
 
     public CommandSwerveDrivetrain(SwerveDrivetrainConstants drivetrainConstants, SwerveModuleConstants<?, ?, ?>... modules) {
+        // --- RESTORED ORIGINAL CTRE CONSTRUCTOR ---
         super(drivetrainConstants, modules);
         if (Utils.isSimulation()) startSimThread();
     }
 
+    /**
+     * applyRequest command to use SwerveRequests via command-based framework.
+     */
     public Command applyRequest(Supplier<SwerveRequest> request) {
         return run(() -> this.setControl(request.get()));
     }
@@ -52,15 +56,10 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     // --- BALLISTIC SOLVER INTEGRATION ---
     private FiringSolution currentFiringSolution = null;
 
-    /**
-     * Gathers robot state and calls the Ballistic Solver to find the required angles.
-     */
     public FiringSolution calculateFiringSolution(Pose3d targetHub) {
         Pose2d pose = getState().Pose;
         ChassisSpeeds speeds = getState().Speeds;
 
-        // If shooter is heavily offset from center, we could calculate tangential velocity here.
-        // For now, we use standard chassis translational velocity.
         FiringSolution solution = BallisticSolver.solveShot(
             pose, 
             targetHub, 
@@ -77,15 +76,14 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         return currentFiringSolution;
     }
 
-    /**
-     * Drivetrain gate check.
-     */
     public boolean isChassisAimed(Rotation2d targetAngle) {
         return Math.abs(getState().Pose.getRotation().minus(targetAngle).getDegrees()) < 1.5
             && Math.abs(getState().Speeds.omegaRadiansPerSecond) < 3.0; 
     }
 
-    // ... existing SysId & Sim methods ...
+    // --- REMOVED THE BREAKING PERIODIC OVERRIDE ---
+    // The super.periodic() is required to copy simulated data into the robot Pose.
+
     public Command sysIdQuasistatic(SysIdRoutine.Direction direction) { return m_sysIdRoutineTranslation.quasistatic(direction); }
     public Command sysIdDynamic(SysIdRoutine.Direction direction) { return m_sysIdRoutineTranslation.dynamic(direction); }
     public Command getPurePursuitCommand(List<Translation2d> path, Rotation2d heading) { return new PurePursuitCommand(this, path, heading); }
@@ -94,8 +92,10 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         m_lastSimTime = Utils.getCurrentTimeSeconds();
         m_simNotifier = new Notifier(() -> {
             final double currentTime = Utils.getCurrentTimeSeconds();
-            double deltaTime = Math.min(currentTime - m_lastSimTime, 2 * kSimLoopPeriod);
+            double deltaTime = currentTime - m_lastSimTime;
             m_lastSimTime = currentTime;
+            
+            /* Feed physics to sim */
             updateSimState(deltaTime, RobotController.getBatteryVoltage());
         });
         m_simNotifier.startPeriodic(kSimLoopPeriod);

@@ -14,7 +14,6 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import dev.doglog.DogLog;
 
 public class HoodSubsystem extends SubsystemBase {
-    // TODO: Verify CAN ID for the Hood Motor
     private static final int HOOD_MOTOR_ID = 15; 
     private static final double GEAR_RATIO = 250.0;
     private final SparkMax hoodMotor;
@@ -23,43 +22,27 @@ public class HoodSubsystem extends SubsystemBase {
 
     public HoodSubsystem() {
         hoodMotor = new SparkMax(HOOD_MOTOR_ID, MotorType.kBrushless);
-        
-        // Create a new configuration object
         SparkMaxConfig config = new SparkMaxConfig();
-
-        // CONVERSION FACTOR: 
-        // 1 motor rotation = (1 / GEAR_RATIO) of a mechanism rotation.
-        // We multiply by 360 to work directly in Degrees.
         double positionConversionFactor = 360.0 / GEAR_RATIO;
         config.encoder.positionConversionFactor(positionConversionFactor);
-
-        // TODO: Tune closed-loop PID values for your Hood's mass
         config.closedLoop.pid(0.05, 0.0, 0.0);
-
-        
-        config.softLimit.forwardSoftLimit(70.0f);
-        config.softLimit.reverseSoftLimit(0.0f);  
-        config.softLimit.forwardSoftLimitEnabled(true);
-        config.softLimit.reverseSoftLimitEnabled(true);
-
-        // Apply the configuration to the motor and burn to flash
+        config.softLimit.forwardSoftLimit(70.0f).reverseSoftLimit(0.0f).forwardSoftLimitEnabled(true).reverseSoftLimitEnabled(true);
         hoodMotor.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-
         hoodEncoder = hoodMotor.getEncoder();
         hoodPid = hoodMotor.getClosedLoopController();
     }
 
     public void setTargetAngle(Rotation2d angle) {
-        // Command the NEO to go to the specific degree
         hoodPid.setReference(angle.getDegrees(), ControlType.kPosition);
         DogLog.log("Hood/TargetDegrees", angle.getDegrees());
     }
 
     public boolean isAtAngle(Rotation2d targetAngle) {
-        // The "Smart Gate" check: Are we within 1.5 degrees of the target?
-        // TODO: Validate that 1.5 degrees is an acceptable tolerance for shot accuracy
-        double currentAngle = hoodEncoder.getPosition();
-        return Math.abs(currentAngle - targetAngle.getDegrees()) < 1.5; 
+        return Math.abs(hoodEncoder.getPosition() - targetAngle.getDegrees()) < 1.5; 
+    }
+
+    public double getCurrentAngleDegrees() {
+        return hoodEncoder.getPosition();
     }
 
     @Override

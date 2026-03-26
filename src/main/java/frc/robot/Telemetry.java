@@ -3,9 +3,12 @@ package frc.robot;
 import com.ctre.phoenix6.SignalLogger;
 import com.ctre.phoenix6.swerve.SwerveDrivetrain.SwerveDriveState;
 
+import dev.doglog.DogLog;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation3d;
+import edu.wpi.first.math.geometry.Transform3d;
+import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveModulePosition;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
@@ -36,6 +39,13 @@ public class Telemetry {
     private final NetworkTableInstance inst = NetworkTableInstance.getDefault();
     private final NetworkTable driveStateTable = inst.getTable("DriveState");
     private final StructPublisher<Pose2d> drivePose = driveStateTable.getStructTopic("Pose", Pose2d.struct).publish();
+    
+    // NATIVE WPILIB 3D PUBLISHERS
+    // ChassisPose3D: Single pose for the main robot base
+    private final StructPublisher<Pose3d> chassisPose3dPub = driveStateTable.getStructTopic("ChassisPose3D", Pose3d.struct).publish();
+    // ComponentPoses3D: Array of poses for the moving mechanisms
+    private final StructArrayPublisher<Pose3d> componentPoses3dPub = driveStateTable.getStructArrayTopic("ComponentPoses3D", Pose3d.struct).publish();
+    
     private final StructPublisher<ChassisSpeeds> driveSpeeds = driveStateTable.getStructTopic("Speeds", ChassisSpeeds.struct).publish();
     private final StructArrayPublisher<SwerveModuleState> driveModuleStates = driveStateTable.getStructArrayTopic("ModuleStates", SwerveModuleState.struct).publish();
     private final StructArrayPublisher<SwerveModuleState> driveModuleTargets = driveStateTable.getStructArrayTopic("ModuleTargets", SwerveModuleState.struct).publish();
@@ -64,8 +74,13 @@ public class Telemetry {
     };
 
     private final double[] m_poseArray = new double[3];
+    
+    // Store the last 2D pose so the 3D mechanism visualizer knows where the robot is globally
+    private Pose2d m_lastPose = new Pose2d();
 
     public void telemeterize(SwerveDriveState state) {
+        m_lastPose = state.Pose;
+        
         drivePose.set(state.Pose);
         driveSpeeds.set(state.Speeds);
         driveModuleStates.set(state.ModuleStates);
@@ -96,22 +111,44 @@ public class Telemetry {
      * Model 3: Climber
      */
     public void telemeterizeMechanisms(double hoodDegrees, double indexerRots, double shooterRots, double climberExtMeters) {
-        // Translation parameters (X, Y, Z in meters) should perfectly match the pivot 
-        // offset from the center of the chassis in your CAD software.
+        // Base chassis pose globally on the field
+        Pose3d chassisPose = new Pose3d(m_lastPose);
+
+        // Transform relative component positions into absolute field positions 
+        // This ensures they never draw at the center of the field by accident!
         
         // 0. Hood pivots on the Y-axis (Pitch)
-        Pose3d hoodPose = new Pose3d(0.0, 0.0, 0.5, new Rotation3d(0.0, Math.toRadians(hoodDegrees), 0.0));
+        Pose3d hoodPose = chassisPose.transformBy(new Transform3d(
+            new Translation3d(0.0, 0.0, 0.5), 
+            new Rotation3d(0.0, Math.toRadians(hoodDegrees), 0.0)
+        ));
         
         // 1. Indexer roller spins continuously 
-        Pose3d indexerPose = new Pose3d(0.0, 0.0, 0.2, new Rotation3d(0.0, indexerRots * 2 * Math.PI, 0.0));
+        Pose3d indexerPose = chassisPose.transformBy(new Transform3d(
+            new Translation3d(0.0, 0.0, 0.2), 
+            new Rotation3d(0.0, indexerRots * 2 * Math.PI, 0.0)
+        ));
 
         // 2. Shooter flywheels spin continuously
-        Pose3d shooterPose = new Pose3d(0.0, 0.0, 0.4, new Rotation3d(0.0, shooterRots * 2 * Math.PI, 0.0));
+        Pose3d shooterPose = chassisPose.transformBy(new Transform3d(
+            new Translation3d(0.0, 0.0, 0.4), 
+            new Rotation3d(0.0, shooterRots * 2 * Math.PI, 0.0)
+        ));
 
         // 3. Climber translates linearly upwards (Z-axis offset + actual extension)
-        Pose3d climberPose = new Pose3d(-0.2, 0.0, 0.3 + climberExtMeters, new Rotation3d());
+        Pose3d climberPose = chassisPose.transformBy(new Transform3d(
+            new Translation3d(-0.2, 0.0, 0.3 + climberExtMeters), 
+            new Rotation3d()
+        ));
 
-        // Publish to CTRE's SignalLogger which AdvantageScope automatically reads
-        SignalLogger.writeStructArray("DriveState/MechanismPoses", Pose3d.struct, new Pose3d[] {hoodPose, indexerPose, shooterPose, climberPose});
+        Pose3d[] componentPoses = new Pose3d[] {hoodPose, indexerPose, shooterPose, climberPose};
+
+        // Publish cleanly separated objects to NetworkTables for live 3D viewing
+        chassisPose3dPub.set(chassisPose);
+        componentPoses3dPub.set(componentPoses);
+        
+        // Log to CTRE SignalLogger for post-match
+        SignalLogger.writeStruct("DriveState/ChassisPose3D", Pose3d.struct, chassisPose);
+        SignalLogger.writeStructArray("DriveState/ComponentPoses3D", Pose3d.struct, componentPoses);
     }
 }

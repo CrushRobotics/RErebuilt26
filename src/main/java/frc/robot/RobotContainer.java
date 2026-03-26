@@ -8,6 +8,7 @@ import com.ctre.phoenix6.swerve.SwerveRequest;
 
 import dev.doglog.DogLog;
 import edu.wpi.first.math.MathUtil;
+import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.RobotBase;
@@ -54,27 +55,18 @@ public class RobotContainer {
     private final AutonomousLogic autonomousLogic;
     private final Field2d field = new Field2d();
     
-    // RESTORED: Instantiate the CTRE Telemetry logger that feeds AdvantageScope
     private final Telemetry logger = new Telemetry(MaxSpeed);
 
     public RobotContainer() {
         SmartDashboard.putData("Field", field);
         
-        // RESTORED: Use the original CTRE Telemetry hook logic that worked previously
         drivetrain.registerTelemetry(state -> {
-            // Update SmartDashboard Field
             field.setRobotPose(state.Pose);
-            
-            // RESTORED: Call the original CTRE Telemetry hook 
-            // This natively formats data for AdvantageScope / SignalLogger
             logger.telemeterize(state);
             
-            // ADDED: DogLog records for native AdvantageScope Swerve Module visualizers
-            DogLog.log("Drive/Pose", state.Pose);
+            DogLog.log("Drive/Pose", new Pose3d(state.Pose));
             DogLog.log("Drive/ModuleStates", state.ModuleStates);
             DogLog.log("Drive/ModuleTargets", state.ModuleTargets);
-
-            // Log vision status to clear unused warning
             DogLog.log("Vision/EstimatorActive", vision != null);
         });
 
@@ -85,18 +77,17 @@ public class RobotContainer {
     private void configureBindings() {
         drivetrain.setDefaultCommand(
             drivetrain.applyRequest(() -> {
-                /* * ROTATION FIX: 
-                 * User identified Axis 2 for turning in simulation.
-                 */
                 double rotAxis = RobotBase.isSimulation() ? joystick.getHID().getRawAxis(2) : joystick.getRightX();
                 
+                // DEBUG: log raw axis to SmartDashboard so it shows in AdvantageScope
+                SmartDashboard.putNumber("Debug/RotAxis", rotAxis);
+
                 return drive.withVelocityX(-MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed)
                     .withVelocityY(-MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed)
                     .withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.1) * MaxAngularRate);
             })
         );
 
-        // --- TRIPLE-CHECK SMART GATE AIMING (LEFT TRIGGER) ---
         joystick.leftTrigger().whileTrue(
             Commands.parallel(
                 drivetrain.applyRequest(() -> {
@@ -148,7 +139,7 @@ public class RobotContainer {
         // TODO: Map bindings for the climber subsystem
     }
 
-    /** * Called periodically to update the 3D mechanisms in telemetry. */
+    /** Called periodically to update the 3D mechanisms in telemetry. */
     public void updateTelemetry() {
         try {
             logger.telemeterizeMechanisms(

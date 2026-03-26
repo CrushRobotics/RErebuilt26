@@ -6,75 +6,104 @@ import dev.doglog.DogLog;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
+import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.DriverStation.Alliance;
+import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.SequentialCommandGroup;
 
+import frc.robot.FieldConstants;
+import frc.robot.commands.AutoSmartGateCommand;
 import frc.robot.commands.DriveToPose;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
+import frc.robot.subsystems.HoodSubsystem;
+import frc.robot.subsystems.IndexerSubsystem;
+import frc.robot.subsystems.ShooterSubsystem;
 
 public class PureScore2 extends SequentialCommandGroup {
 
-    public PureScore2(CommandSwerveDrivetrain drivetrain) {
-        // Defined Start Pose
+    public PureScore2(CommandSwerveDrivetrain drivetrain, HoodSubsystem hood, ShooterSubsystem shooter, IndexerSubsystem indexer) {
         Pose2d startPose = new Pose2d(4.004, 7.474, Rotation2d.fromDegrees(0.000));
         
-        // Defined Final End Point Target
-        Rotation2d endPointHeading = Rotation2d.fromDegrees(-90.000);
+        // --- PHASE 1: Drive to Fuel ---
+        List<Translation2d> phase1Waypoints = List.of(
+            startPose.getTranslation(),      
+            new Translation2d(6.444, 7.576)  // WP1
+        );
+        Rotation2d phase1Heading = Rotation2d.fromDegrees(0.0);
+
+        // --- PHASE 2: Intake/Sweep ---
+        List<Translation2d> phase2Waypoints = List.of(
+            new Translation2d(6.444, 7.576), // WP1
+            new Translation2d(7.552, 6.872), // WP2
+            new Translation2d(7.853, 5.529), // WP3
+            new Translation2d(7.807, 4.605)  // WP4 (End sweep)
+        );
+        // Fixed intake heading between 80-100 degrees
+        Rotation2d phase2Heading = Rotation2d.fromDegrees(90.0);
+
+        // --- PHASE 3: Drive Back (Crossing Trench) ---
+        List<Translation2d> phase3Waypoints = List.of(
+            new Translation2d(7.807, 4.605), // WP4
+            new Translation2d(6.342, 5.530), // WP5
+            new Translation2d(5.836, 7.518)  // WP6 (Crossed Trench)
+        );
+        // Base heading set to 0.0, keeping orientation neutral while crossing back over.
+        Rotation2d phase3Heading = Rotation2d.fromDegrees(0.0);
+
+        // --- PHASE 4: Drive to Depot (Shooter Phase Begins!) ---
+        List<Translation2d> phase4Waypoints = List.of(
+            new Translation2d(5.836, 7.518), // WP6
+            new Translation2d(4.532, 7.572), // WP7
+            new Translation2d(1.059, 7.513)  // WP8 (Depot at the back wall)
+        );
+        // Base heading is 0.0, but dynamic aiming will override this to keep it locked on the Hub
+        Rotation2d depotHeading = Rotation2d.fromDegrees(0.0);
+        
+        // --- PHASE 5: Climb Approach ---
+        // Face 0.0 degrees. This keeps the climber (side) perpendicular to the rung for a clean strafe
+        Rotation2d endPointHeading = Rotation2d.fromDegrees(0.0);
+        // Target Pose moves strictly in Y from WP8 to align with the rung while strafing
         Pose2d targetPose = new Pose2d(1.059, 4.658, endPointHeading);
 
-        // Leg 1: Start -> WP1 -> WP2 -> WP3 -> WP4 (Navigating right and down)
-        List<Translation2d> leg1Waypoints = List.of(
-            startPose.getTranslation(),      // Start Point
-            new Translation2d(6.444, 7.576), // Waypoint 1
-            new Translation2d(7.552, 6.872), // Waypoint 2
-            new Translation2d(7.853, 5.529), // Waypoint 3
-            new Translation2d(7.807, 4.605)  // Waypoint 4
-        );
-        Rotation2d leg1Heading = Rotation2d.fromDegrees(-75.369); // WP4 Heading
-
-        // Leg 2: WP4 -> WP5 -> WP6 (Looping back left and up)
-        List<Translation2d> leg2Waypoints = List.of(
-            new Translation2d(7.807, 4.605), // Waypoint 4
-            new Translation2d(6.342, 5.530), // Waypoint 5
-            new Translation2d(5.836, 7.518)  // Waypoint 6
-        );
-        Rotation2d leg2Heading = Rotation2d.fromDegrees(110.948); // WP6 Heading
-
-        // Leg 3: WP6 -> WP7 -> WP8 (Traversing across the top left)
-        List<Translation2d> leg3Waypoints = List.of(
-            new Translation2d(5.836, 7.518), // Waypoint 6
-            new Translation2d(4.532, 7.572), // Waypoint 7
-            new Translation2d(2.134, 7.513)  // Waypoint 8
-        );
-        Rotation2d leg3Heading = Rotation2d.fromDegrees(177.212); // WP8 Heading
-
-        // Final leg: WP8 -> End Point (Dipping down to score)
-        List<Translation2d> finalWaypoints = List.of(
-            new Translation2d(2.134, 7.513), // Waypoint 8
-            targetPose.getTranslation()      // End Point
-        );
-
-        // Add all phases sequentially to this Command Group
         addCommands(
-            // Phase 0: Simulator Start Pose Reset & Ghost Pose Visualization
             drivetrain.runOnce(() -> {
                 drivetrain.resetPose(startPose);
                 DogLog.log("Auto/TargetPose", targetPose);
             }),
 
-            // Phase 1: Follow Leg 1 to WP4
-            drivetrain.getPurePursuitCommand(leg1Waypoints, leg1Heading),
+            // Phase 1: Drive to Fuel (No dynamic aiming)
+            drivetrain.getPurePursuitCommand(phase1Waypoints, phase1Heading, false),
 
-            // Phase 2: Follow Leg 2 to WP6
-            drivetrain.getPurePursuitCommand(leg2Waypoints, leg2Heading),
+            // Phase 2: Sweep Fuel at 90 Degrees
+            // TODO: Wrap in Commands.parallel(drivetrain.get..., IntakeCommand)
+            drivetrain.getPurePursuitCommand(phase2Waypoints, phase2Heading, false),
 
-            // Phase 3: Follow Leg 3 across the top to WP8
-            drivetrain.getPurePursuitCommand(leg3Waypoints, leg3Heading),
+            // Phase 3: Cross trench back to our side (No dynamic aiming yet)
+            drivetrain.getPurePursuitCommand(phase3Waypoints, phase3Heading, false),
 
-            // Phase 4: Follow the final maneuvering segment from WP8 to the End Point
-            drivetrain.getPurePursuitCommand(finalWaypoints, endPointHeading),
-
-            // Phase 5: Final exact alignment using DriveToPose and Vision
-            new DriveToPose(drivetrain, targetPose)
+            // Phase 4, Pause, and Phase 5: Run parallel with the shooting logic
+            Commands.parallel(
+                Commands.sequence(
+                    // Phase 4: Drive to Depot. Dynamic Aiming TRUE to lock onto Hub!
+                    drivetrain.getPurePursuitCommand(phase4Waypoints, depotHeading, true),
+                    
+                    // Pause for 2.5 seconds at the Depot.
+                    // The drivetrain holds its locked heading while the human player feeds balls.
+                    Commands.waitSeconds(2.5),
+                    
+                    // Phase 5: Final strafe to the climber rung
+                    new DriveToPose(drivetrain, targetPose)
+                ), 
+                new AutoSmartGateCommand(
+                    drivetrain, hood, shooter, indexer, 
+                    () -> {
+                        var alliance = DriverStation.getAlliance();
+                        return (alliance.isPresent() && alliance.get() == Alliance.Red) ? 
+                               FieldConstants.RED_GOAL_POSE : FieldConstants.BLUE_GOAL_POSE;
+                    },
+                    () -> true
+                )
+            )
         );
     }
 }

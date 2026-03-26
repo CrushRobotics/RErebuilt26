@@ -34,21 +34,11 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     private Notifier m_simNotifier = null;
     private double m_lastSimTime;
 
-    private final SwerveRequest.SysIdSwerveTranslation m_translationCharacterization = new SwerveRequest.SysIdSwerveTranslation();
-    private final SysIdRoutine m_sysIdRoutineTranslation = new SysIdRoutine(
-        new SysIdRoutine.Config(null, Volts.of(4), null, state -> SignalLogger.writeString("SysIdTranslation_State", state.toString())),
-        new SysIdRoutine.Mechanism(output -> setControl(m_translationCharacterization.withVolts(output)), null, this)
-    );
-
     public CommandSwerveDrivetrain(SwerveDrivetrainConstants drivetrainConstants, SwerveModuleConstants<?, ?, ?>... modules) {
-        // --- RESTORED ORIGINAL CTRE CONSTRUCTOR ---
         super(drivetrainConstants, modules);
         if (Utils.isSimulation()) startSimThread();
     }
 
-    /**
-     * applyRequest command to use SwerveRequests via command-based framework.
-     */
     public Command applyRequest(Supplier<SwerveRequest> request) {
         return run(() -> this.setControl(request.get()));
     }
@@ -57,14 +47,20 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     private FiringSolution currentFiringSolution = null;
 
     public FiringSolution calculateFiringSolution(Pose3d targetHub) {
-        Pose2d pose = getState().Pose;
-        ChassisSpeeds speeds = getState().Speeds;
+        var state = getState();
+        Pose2d pose = state.Pose;
+        
+        // FIX: Convert Robot-Relative speeds to Field-Relative for the solver
+        ChassisSpeeds fieldSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(
+            state.Speeds, 
+            pose.getRotation()
+        );
 
         FiringSolution solution = BallisticSolver.solveShot(
             pose, 
             targetHub, 
-            speeds.vxMetersPerSecond, 
-            speeds.vyMetersPerSecond, 
+            fieldSpeeds.vxMetersPerSecond, 
+            fieldSpeeds.vyMetersPerSecond, 
             FieldConstants.ROBOT_SHOOTER_HEIGHT_METERS
         );
 
@@ -77,16 +73,12 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
     }
 
     public boolean isChassisAimed(Rotation2d targetAngle) {
-        return Math.abs(getState().Pose.getRotation().minus(targetAngle).getDegrees()) < 1.5
-            && Math.abs(getState().Speeds.omegaRadiansPerSecond) < 3.0; 
+        return Math.abs(getState().Pose.getRotation().minus(targetAngle).getDegrees()) < 1.5;
     }
 
-    // --- REMOVED THE BREAKING PERIODIC OVERRIDE ---
-    // The super.periodic() is required to copy simulated data into the robot Pose.
-
-    public Command sysIdQuasistatic(SysIdRoutine.Direction direction) { return m_sysIdRoutineTranslation.quasistatic(direction); }
-    public Command sysIdDynamic(SysIdRoutine.Direction direction) { return m_sysIdRoutineTranslation.dynamic(direction); }
-    public Command getPurePursuitCommand(List<Translation2d> path, Rotation2d heading) { return new PurePursuitCommand(this, path, heading); }
+    public Command getPurePursuitCommand(List<Translation2d> path, Rotation2d heading, boolean enableDynamicAiming) { 
+        return new PurePursuitCommand(this, path, heading, enableDynamicAiming); 
+    }
 
     private void startSimThread() {
         m_lastSimTime = Utils.getCurrentTimeSeconds();
@@ -94,15 +86,8 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
             final double currentTime = Utils.getCurrentTimeSeconds();
             double deltaTime = currentTime - m_lastSimTime;
             m_lastSimTime = currentTime;
-            
-            /* Feed physics to sim */
             updateSimState(deltaTime, RobotController.getBatteryVoltage());
         });
         m_simNotifier.startPeriodic(kSimLoopPeriod);
-    }
-    
-    @Override 
-    public void addVisionMeasurement(Pose2d visionRobotPoseMeters, double timestampSeconds) { 
-        super.addVisionMeasurement(visionRobotPoseMeters, Utils.fpgaToCurrentTime(timestampSeconds)); 
     }
 }

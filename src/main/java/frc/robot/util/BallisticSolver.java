@@ -3,72 +3,69 @@ package frc.robot.util;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Translation2d;
 
 public class BallisticSolver {
-    private static final double GRAVITY = 9.81;
+
+    // --- ROBOT DIMENSIONS / OFFSETS ---
+    // User: "Shooter is in the center of the robot, aligned to the back. Intake/Shooter face the same way."
+    // This means the exit point is physically behind the center, but fires FORWARD.
+    private static final double SHOOTER_OFFSET_X = -0.35; 
+    private static final double SHOOTER_OFFSET_Y = 0.0; 
 
     public static class FiringSolution {
-        public final Rotation2d chassisAimAngle;
-        public final Rotation2d hoodAimAngle;
         public final double shotVelocityMps;
+        public final Rotation2d hoodAimAngle;
+        public final Rotation2d chassisAimAngle;
 
-        public FiringSolution(Rotation2d chassisAimAngle, Rotation2d hoodAimAngle, double shotVelocityMps) {
-            this.chassisAimAngle = chassisAimAngle;
-            this.hoodAimAngle = hoodAimAngle;
-            this.shotVelocityMps = shotVelocityMps;
+        public FiringSolution(double velocity, Rotation2d hoodAngle, Rotation2d chassisAngle) {
+            this.shotVelocityMps = velocity;
+            this.hoodAimAngle = hoodAngle;
+            this.chassisAimAngle = chassisAngle;
         }
     }
 
-    // Solve F(t) = 0 using Newton's method
-    private static Double solveTimeNewton(double dx, double dy, double dz, double vrx, double vry, double v0, double t0) {
-        double t = t0;
-        for (int i = 0; i < 40; i++) {
-            double Ft = F(t, dx, dy, dz, vrx, vry, v0);
-            if (Math.abs(Ft) < 1e-6) return t;
+    /**
+     * Solves for the required robot heading and shooter parameters.
+     * @param robotVx Field-relative X velocity (m/s)
+     * @param robotVy Field-relative Y velocity (m/s)
+     */
+    public static FiringSolution solveShot(Pose2d robotPose, Pose3d targetHub, double robotVx, double robotVy, double shooterHeight) {
+        // 1. Initial distance from center
+        double centerDx = targetHub.getX() - robotPose.getX();
+        double centerDy = targetHub.getY() - robotPose.getY();
+        double groundDistanceCenter = Math.sqrt(centerDx * centerDx + centerDy * centerDy);
+        
+        // 2. Realistic Exit Velocity (Typical FRC is 12-18 mps)
+        double exitVelocity = 15.0; 
+        
+        // Flight time estimate
+        double flightTime = groundDistanceCenter / (exitVelocity * 0.9);
 
-            double dFt = dFdt(t, dx, dy, dz, vrx, vry, v0);
-            if (Math.abs(dFt) < 1e-9) return null;
+        // 3. VIRTUAL TARGET (Ballistic Compensation)
+        // We subtract the robot's motion from the goal's position. 
+        // If we drive right, we aim left of the hub.
+        double virtualX = targetHub.getX() - (robotVx * flightTime);
+        double virtualY = targetHub.getY() - (robotVy * flightTime);
+        Translation2d virtualTarget = new Translation2d(virtualX, virtualY);
 
-            t = t - Ft / dFt;
-            if (t <= 0) return null;
-        }
-        return null;
-    }
+        // 4. SHOOTER OFFSET COMPENSATION
+        // Since the shooter/intake face the SAME direction, chassis heading = shooter heading.
+        Rotation2d angleToTarget = new Rotation2d(virtualX - robotPose.getX(), virtualY - robotPose.getY());
+        
+        // Position of the shooter exit in the field frame
+        Translation2d shooterOffsetField = new Translation2d(SHOOTER_OFFSET_X, SHOOTER_OFFSET_Y).rotateBy(angleToTarget);
+        Translation2d shooterPosField = robotPose.getTranslation().plus(shooterOffsetField);
 
-    private static double F(double t, double dx, double dy, double dz, double vrx, double vry, double v0) {
-        if (t <= 0) return 1e9;
-        double vzTerm = (dz + 0.5 * GRAVITY * t * t) / (v0 * t);
-        double hx = dx - vrx * t;
-        double hy = dy - vry * t;
-        double R2 = hx * hx + hy * hy;
-        return v0 * v0 * (1 - vzTerm * vzTerm) - R2 / (t * t);
-    }
+        // Final vector from shooter exit to virtual target
+        double finalDx = virtualX - shooterPosField.getX();
+        double finalDy = virtualY - shooterPosField.getY();
+        Rotation2d finalChassisHeading = new Rotation2d(finalDx, finalDy);
 
-    private static double dFdt(double t, double dx, double dy, double dz, double vrx, double vry, double v0) {
-        double h = 1e-5;
-        return (F(t + h, dx, dy, dz, vrx, vry, v0) - F(t - h, dx, dy, dz, vrx, vry, v0)) / (2 * h);
-    }
+        // 5. Hood Angle based on distance from ACTUAL shooter exit
+        double finalDistance = shooterPosField.getDistance(virtualTarget);
+        Rotation2d hoodAngle = Rotation2d.fromDegrees(32.0 + (finalDistance * 1.95)); 
 
-    public static FiringSolution solveShot(Pose2d robotPose, Pose3d goalPose, double robotVx, double robotVy, double shooterHeightMeters) {
-        double dx = goalPose.getX() - robotPose.getX();
-        double dy = goalPose.getY() - robotPose.getY();
-        double dz = goalPose.getZ() - shooterHeightMeters;
-
-        // Dynamic launch speed (can interpolate this for finer control)
-        double dist = Math.hypot(dx, dy);
-        double launchSpeed = (dist > 3.0) ? 15.0 : 10.0;
-
-        Double t = solveTimeNewton(dx, dy, dz, robotVx, robotVy, launchSpeed, 1.0);
-        if (t == null) return null; // No physical solution found
-
-        // Azimuth (Chassis angle to target, compensating for velocity)
-        double phi = Math.atan2(dy - robotVy * t, dx - robotVx * t);
-
-        // Elevation (Hood Angle)
-        double sinTheta = (dz + 0.5 * GRAVITY * t * t) / (launchSpeed * t);
-        if (sinTheta > 1 || sinTheta < -1) return null;
-        double theta = Math.asin(sinTheta);
-
-        return new FiringSolution(Rotation2d.fromRadians(phi), Rotation2d.fromRadians(theta), launchSpeed);
+        return new FiringSolution(exitVelocity, hoodAngle, finalChassisHeading);
     }
 }

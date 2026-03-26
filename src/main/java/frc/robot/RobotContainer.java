@@ -33,15 +33,14 @@ public class RobotContainer {
     private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond);
 
     private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric().withDriveRequestType(DriveRequestType.OpenLoopVoltage);
+    
+    // This request uses CTRE's internal closed-loop PID to snap to a specific heading while driving
     private final SwerveRequest.FieldCentricFacingAngle autoAimDrive = new SwerveRequest.FieldCentricFacingAngle().withDriveRequestType(DriveRequestType.OpenLoopVoltage);
 
     private final CommandXboxController joystick = new CommandXboxController(0);
-    // TODO: Initialize Operator Controller for secondary mechanisms
-    // private final CommandXboxController operatorJoystick = new CommandXboxController(1);
 
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
     
-    // SAFETY: Suppress vision in sim if no coprocessor found
     @SuppressWarnings("unused")
     private final VisionSubsystem vision = RobotBase.isReal() ? new VisionSubsystem(drivetrain) : null;
     
@@ -49,7 +48,6 @@ public class RobotContainer {
     private final ShooterSubsystem shooter = new ShooterSubsystem();
     private final HoodSubsystem hood = new HoodSubsystem();
     private final IndexerSubsystem indexer = new IndexerSubsystem();
-    // TODO: Initialize ClimberSubsystem once implemented
     private final ClimberSubsystem climber = new ClimberSubsystem();
 
     private final AutonomousLogic autonomousLogic;
@@ -70,16 +68,17 @@ public class RobotContainer {
             DogLog.log("Vision/EstimatorActive", vision != null);
         });
 
-        autonomousLogic = new AutonomousLogic(drivetrain);
+        autonomousLogic = new AutonomousLogic(drivetrain, hood, shooter, indexer);
         configureBindings();
     }
 
     private void configureBindings() {
+        // --- DEFAULT DRIVE ---
         drivetrain.setDefaultCommand(
             drivetrain.applyRequest(() -> {
-                double rotAxis = RobotBase.isSimulation() ? joystick.getHID().getRawAxis(2) : joystick.getRightX();
+                // Manual rotation axis moved to Axis 3 (Right X) to free up Axis 4 for the trigger
+                double rotAxis = RobotBase.isSimulation() ? joystick.getHID().getRawAxis(3) : joystick.getRightX();
                 
-                // DEBUG: log raw axis to SmartDashboard so it shows in AdvantageScope
                 SmartDashboard.putNumber("Debug/RotAxis", rotAxis);
 
                 return drive.withVelocityX(-MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed)
@@ -88,27 +87,41 @@ public class RobotContainer {
             })
         );
 
-        joystick.leftTrigger().whileTrue(
+        // --- DYNAMIC AUTO-AIM (TRIGGERED BY AXIS 4) ---
+        // Using axisGreaterThan(4, 0.1) to treat the analog axis 4 as a button trigger
+        joystick.axisGreaterThan(4, 0.1).whileTrue(
             Commands.parallel(
+                // 1. Drivetrain control: Translates with left stick, rotation hijacked for Hub
                 drivetrain.applyRequest(() -> {
                     double xVel = -MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed;
                     double yVel = -MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed;
 
                     Optional<Alliance> alliance = DriverStation.getAlliance();
-                    if (alliance.isEmpty()) return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(0);
+                    
+                    // Simulation Fix: Default to Blue alliance if not set in Sim GUI
+                    Alliance currentAlliance = alliance.orElse(RobotBase.isSimulation() ? Alliance.Blue : null);
+                    
+                    if (currentAlliance == null) {
+                        return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(0);
+                    }
 
-                    var targetHub = (alliance.get() == Alliance.Red) ? 
+                    var targetHub = (currentAlliance == Alliance.Red) ? 
                                     FieldConstants.RED_GOAL_POSE : FieldConstants.BLUE_GOAL_POSE;
 
                     FiringSolution solution = drivetrain.calculateFiringSolution(targetHub);
 
+                    // If we have a solution, snap to it. Otherwise, stay oriented as we are.
                     if (solution != null) {
                         return autoAimDrive.withVelocityX(xVel).withVelocityY(yVel)
                                            .withTargetDirection(solution.chassisAimAngle);
                     }
-                    return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(0);
+                    
+                    // Fallback to manual rotation via Axis 3 if the ballistic solver fails to find a shot
+                    double rotAxis = RobotBase.isSimulation() ? joystick.getHID().getRawAxis(3) : joystick.getRightX();
+                    return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.1) * MaxAngularRate);
                 }),
 
+                // 2. Shooter/Hood/Indexer control
                 Commands.run(() -> {
                     FiringSolution solution = drivetrain.getCurrentFiringSolution();
                     if (solution == null) {
@@ -134,12 +147,8 @@ public class RobotContainer {
                 indexer.stopFeeder();
             })
         );
-
-        // TODO: Map bindings for intaking game pieces
-        // TODO: Map bindings for the climber subsystem
     }
 
-    /** Called periodically to update the 3D mechanisms in telemetry. */
     public void updateTelemetry() {
         try {
             logger.telemeterizeMechanisms(

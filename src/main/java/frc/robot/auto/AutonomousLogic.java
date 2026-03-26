@@ -8,19 +8,19 @@ import frc.robot.auto.routines.FullBox;
 import frc.robot.auto.routines.PureScore1;
 import frc.robot.auto.routines.PureScore2;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
+import frc.robot.subsystems.HoodSubsystem;
+import frc.robot.subsystems.IndexerSubsystem;
+import frc.robot.subsystems.ShooterSubsystem;
 
 public class AutonomousLogic {
     private final SendableChooser<Command> autoChooser = new SendableChooser<>();
-    private final CommandSwerveDrivetrain drivetrain;
 
-    public AutonomousLogic(CommandSwerveDrivetrain drivetrain) {
-        this.drivetrain = drivetrain;
+    public AutonomousLogic(CommandSwerveDrivetrain drivetrain, HoodSubsystem hood, ShooterSubsystem shooter, IndexerSubsystem indexer) {
 
-        // Register our separated autonomous routines
-        autoChooser.setDefaultOption("PureScore1", new PureScore1(drivetrain));
-        
-        autoChooser.addOption("PureScore2", new PureScore2(drivetrain));
-        autoChooser.addOption("FullBox", new FullBox(drivetrain));
+        // Register all routines with combat subsystems passed in
+        autoChooser.setDefaultOption("PureScore1", new PureScore1(drivetrain, hood, shooter, indexer));
+        autoChooser.addOption("PureScore2", new PureScore2(drivetrain, hood, shooter, indexer));
+        autoChooser.addOption("FullBox", new FullBox(drivetrain, hood, shooter, indexer));
 
         SmartDashboard.putData("Auto Chooser", autoChooser);
     }

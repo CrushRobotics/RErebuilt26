@@ -15,12 +15,10 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
-import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.Notifier;
 import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Subsystem;
-import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
 
 import frc.robot.FieldConstants;
 import frc.robot.commands.PurePursuitCommand;
@@ -50,21 +48,30 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain implements Su
         var state = getState();
         Pose2d pose = state.Pose;
         
-        // FIX: Convert Robot-Relative speeds to Field-Relative for the solver
-        ChassisSpeeds fieldSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(
-            state.Speeds, 
-            pose.getRotation()
-        );
+        // FIX: CTRE state.Speeds are Robot-Relative. 
+        // We must rotate them by the robot's heading to get Field-Relative speeds for the solver!
+        Translation2d fieldRelativeVelocity = new Translation2d(
+            state.Speeds.vxMetersPerSecond, 
+            state.Speeds.vyMetersPerSecond
+        ).rotateBy(pose.getRotation());
 
         FiringSolution solution = BallisticSolver.solveShot(
             pose, 
             targetHub, 
-            fieldSpeeds.vxMetersPerSecond, 
-            fieldSpeeds.vyMetersPerSecond, 
+            fieldRelativeVelocity.getX(), 
+            fieldRelativeVelocity.getY(), 
             FieldConstants.ROBOT_SHOOTER_HEIGHT_METERS
         );
 
         this.currentFiringSolution = solution;
+        
+        if (solution != null) {
+            // GHOST POINT LOGGING: 
+            // Logs a "Ghost Pose" at the robot's current position pointing exactly at the calculated aim angle.
+            // Drag this into AdvantageScope's 3D/2D Field to see exactly what the math is demanding!
+            DogLog.log("Shooter/AimGhost", new Pose2d(pose.getTranslation(), solution.chassisAimAngle));
+        }
+
         return solution;
     }
 

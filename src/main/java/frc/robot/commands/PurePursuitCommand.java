@@ -17,30 +17,29 @@ import frc.robot.util.BallisticSolver.FiringSolution;
 
 import java.util.List;
 
-/**
- * Pure Pursuit Algorithm: Robot chases an imaginary "rabbit" lookahead point on the path.
- * Extremely resilient to being bumped off course.
- */
 public class PurePursuitCommand extends Command {
     private final CommandSwerveDrivetrain drivetrain;
     private final List<Translation2d> path;
     private final Rotation2d desiredHeading;
     private final boolean enableDynamicAiming;
 
+    // Normal request for sweeping/driving
     private final SwerveRequest.FieldCentric driveRequest = new SwerveRequest.FieldCentric()
             .withDriveRequestType(DriveRequestType.Velocity);
 
-    // TODO: Tune Pure Pursuit lookahead distance. (Larger = smoother but cuts corners; Smaller = tighter but may oscillate)
+    // Native CTRE Request for aggressive Auto-Aiming on the move!
+    private final SwerveRequest.FieldCentricFacingAngle autoAimDriveRequest = new SwerveRequest.FieldCentricFacingAngle()
+            .withDriveRequestType(DriveRequestType.Velocity);
+
     private final double lookaheadDistanceMeters = 0.6; 
     private final double completionToleranceMeters = 0.1;
 
-    // TODO: Tune Pure Pursuit PID controllers for your real robot's mass and drivetrain dynamics
     private final PIDController xController = new PIDController(4.0, 0.0, 0.0);
     private final PIDController yController = new PIDController(4.0, 0.0, 0.0);
     
-    // Restored ProfiledPIDController for smooth acceleration
+    // Only used when dynamic aiming is FALSE
     private final ProfiledPIDController thetaController = new ProfiledPIDController(
-            25.0, 0.0, 0.1,
+            8.0, 0.0, 0.1,
             new TrapezoidProfile.Constraints(Math.PI * 4, Math.PI * 8)
     );
 
@@ -51,11 +50,14 @@ public class PurePursuitCommand extends Command {
         this.enableDynamicAiming = enableDynamicAiming;
         addRequirements(drivetrain);
         thetaController.enableContinuousInput(-Math.PI, Math.PI);
+
+        // Apply the same aggressive PID we found worked in teleop
+        autoAimDriveRequest.HeadingController.setPID(20.0, 0, 1.0);
+        autoAimDriveRequest.HeadingController.enableContinuousInput(-Math.PI, Math.PI);
     }
 
     @Override
     public void initialize() {
-        // Resetting the profile to start at our current actual angle
         thetaController.reset(drivetrain.getState().Pose.getRotation().getRadians());
     }
 
@@ -63,35 +65,33 @@ public class PurePursuitCommand extends Command {
     public void execute() {
         Pose2d currentPose = drivetrain.getState().Pose;
         Translation2d robotPos = currentPose.getTranslation();
-
         Translation2d lookaheadPoint = getLookaheadPoint(robotPos);
 
         double vx = xController.calculate(robotPos.getX(), lookaheadPoint.getX());
         double vy = yController.calculate(robotPos.getY(), lookaheadPoint.getY());
         
-        // --- AIMING LOGIC ---
-        // 1. Default to the static path heading passed into the command
-        Rotation2d currentTargetHeading = this.desiredHeading;
-        
-        // 2. Only override with dynamic turret aiming if the flag is true AND we have a physical solution
-        if (this.enableDynamicAiming) {
-            FiringSolution firingSolution = drivetrain.getCurrentFiringSolution();
-            if (firingSolution != null) {
-                currentTargetHeading = firingSolution.chassisAimAngle;
-            }
-        }
-
-        // 3. Calculate rotational rate based on the target heading
-        double omega = thetaController.calculate(currentPose.getRotation().getRadians(), currentTargetHeading.getRadians());
-
         vx = MathUtil.clamp(vx, -3.0, 3.0);
         vy = MathUtil.clamp(vy, -3.0, 3.0);
 
-        drivetrain.setControl(driveRequest.withVelocityX(vx).withVelocityY(vy).withRotationalRate(omega));
+        // --- DYNAMIC AIMING LOGIC (LIKE A TURRET) ---
+        if (this.enableDynamicAiming) {
+            FiringSolution firingSolution = drivetrain.getCurrentFiringSolution();
+            if (firingSolution != null) {
+                // Hand the math directly to CTRE's internal closed-loop to eliminate lag
+                drivetrain.setControl(autoAimDriveRequest
+                    .withVelocityX(vx)
+                    .withVelocityY(vy)
+                    .withTargetDirection(firingSolution.chassisAimAngle)
+                );
+                DogLog.log("PurePursuit/TargetHeadingDegrees", firingSolution.chassisAimAngle.getDegrees());
+                return; // Exit early!
+            }
+        }
 
-        DogLog.log("PurePursuit/LookaheadPoint", new Pose2d(lookaheadPoint, Rotation2d.kZero));
-        // Log the exact angle the solver is demanding so you can verify it in AdvantageScope
-        DogLog.log("PurePursuit/TargetHeadingDegrees", currentTargetHeading.getDegrees());
+        // --- STATIC AIMING LOGIC ---
+        double omega = thetaController.calculate(currentPose.getRotation().getRadians(), desiredHeading.getRadians());
+        drivetrain.setControl(driveRequest.withVelocityX(vx).withVelocityY(vy).withRotationalRate(omega));
+        DogLog.log("PurePursuit/TargetHeadingDegrees", desiredHeading.getDegrees());
     }
 
     @Override

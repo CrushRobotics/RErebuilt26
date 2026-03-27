@@ -8,7 +8,9 @@ import com.ctre.phoenix6.swerve.SwerveRequest;
 
 import dev.doglog.DogLog;
 import edu.wpi.first.math.MathUtil;
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.RobotBase;
@@ -25,16 +27,15 @@ import frc.robot.subsystems.HoodSubsystem;
 import frc.robot.subsystems.IndexerSubsystem;
 import frc.robot.subsystems.ShooterSubsystem;
 import frc.robot.subsystems.VisionSubsystem;
+import frc.robot.util.BallisticSolver;
 import frc.robot.util.BallisticSolver.FiringSolution;
 import frc.robot.subsystems.ClimberSubsystem;
 
 public class RobotContainer {
     private double MaxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
-    private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond);
+    private double MaxAngularRate = RotationsPerSecond.of(1.5).in(RadiansPerSecond); 
 
     private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric().withDriveRequestType(DriveRequestType.OpenLoopVoltage);
-    
-    // This request uses CTRE's internal closed-loop PID to snap to a specific heading while driving
     private final SwerveRequest.FieldCentricFacingAngle autoAimDrive = new SwerveRequest.FieldCentricFacingAngle().withDriveRequestType(DriveRequestType.OpenLoopVoltage);
 
     private final CommandXboxController joystick = new CommandXboxController(0);
@@ -44,7 +45,6 @@ public class RobotContainer {
     @SuppressWarnings("unused")
     private final VisionSubsystem vision = RobotBase.isReal() ? new VisionSubsystem(drivetrain) : null;
     
-    // Combat Mechanisms
     private final ShooterSubsystem shooter = new ShooterSubsystem();
     private final HoodSubsystem hood = new HoodSubsystem();
     private final IndexerSubsystem indexer = new IndexerSubsystem();
@@ -61,102 +61,95 @@ public class RobotContainer {
         drivetrain.registerTelemetry(state -> {
             field.setRobotPose(state.Pose);
             logger.telemeterize(state);
-            
             DogLog.log("Drive/Pose", new Pose3d(state.Pose));
-            DogLog.log("Drive/ModuleStates", state.ModuleStates);
-            DogLog.log("Drive/ModuleTargets", state.ModuleTargets);
-            DogLog.log("Vision/EstimatorActive", vision != null);
         });
+
+        autoAimDrive.HeadingController.setPID(20.0, 0, 1.0);
+        autoAimDrive.HeadingController.enableContinuousInput(-Math.PI, Math.PI);
 
         autonomousLogic = new AutonomousLogic(drivetrain, hood, shooter, indexer);
         configureBindings();
     }
 
     private void configureBindings() {
-        // --- DEFAULT DRIVE ---
         drivetrain.setDefaultCommand(
             drivetrain.applyRequest(() -> {
-                // Manual rotation axis moved to Axis 3 (Right X) to free up Axis 4 for the trigger
                 double rotAxis = RobotBase.isSimulation() ? joystick.getHID().getRawAxis(3) : joystick.getRightX();
-                
-                SmartDashboard.putNumber("Debug/RotAxis", rotAxis);
-
                 return drive.withVelocityX(-MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed)
                     .withVelocityY(-MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed)
                     .withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.1) * MaxAngularRate);
             })
         );
 
-        // --- DYNAMIC AUTO-AIM (TRIGGERED BY AXIS 4) ---
-        // Using axisGreaterThan(4, 0.1) to treat the analog axis 4 as a button trigger
+        // --- MANUAL SHOOTER TEST (RIGHT BUMPER) ---
+        joystick.rightBumper().whileTrue(
+            Commands.run(() -> {
+                // Manually spin up the shooter to a set test velocity (e.g., 15 m/s)
+                shooter.setTargetVelocity(15.0);
+            }, shooter)
+        ).onFalse(
+            Commands.runOnce(() -> {
+                // Stop the shooter when the bumper is released
+                shooter.stop();
+            }, shooter)
+        );
+
+        // --- BALLISTIC ALIGNMENT TEST (AXIS 4 TRIGGER) ---
         joystick.axisGreaterThan(4, 0.1).whileTrue(
             Commands.parallel(
-                // 1. Drivetrain control: Translates with left stick, rotation hijacked for Hub
                 drivetrain.applyRequest(() -> {
                     double xVel = -MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed;
                     double yVel = -MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed;
 
-                    Optional<Alliance> alliance = DriverStation.getAlliance();
+                    Pose2d currentPose = drivetrain.getState().Pose;
+                    Alliance alliance = DriverStation.getAlliance().orElse(RobotBase.isSimulation() ? Alliance.Blue : null);
                     
-                    // Simulation Fix: Default to Blue alliance if not set in Sim GUI
-                    Alliance currentAlliance = alliance.orElse(RobotBase.isSimulation() ? Alliance.Blue : null);
-                    
-                    if (currentAlliance == null) {
-                        return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(0);
-                    }
+                    if (alliance == null) return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(0);
 
-                    var targetHub = (currentAlliance == Alliance.Red) ? 
-                                    FieldConstants.RED_GOAL_POSE : FieldConstants.BLUE_GOAL_POSE;
+                    Pose3d targetHub = (alliance == Alliance.Red) ? FieldConstants.RED_GOAL_POSE : FieldConstants.BLUE_GOAL_POSE;
 
-                    FiringSolution solution = drivetrain.calculateFiringSolution(targetHub);
+                    var state = drivetrain.getState();
+                    FiringSolution solution = BallisticSolver.solveShot(
+                        currentPose, 
+                        targetHub, 
+                        state.Speeds.vxMetersPerSecond, 
+                        state.Speeds.vyMetersPerSecond, 
+                        FieldConstants.ROBOT_SHOOTER_HEIGHT_METERS
+                    );
 
-                    // If we have a solution, snap to it. Otherwise, stay oriented as we are.
                     if (solution != null) {
+                        DogLog.log("Shooter/TargetHeading", solution.chassisAimAngle.getDegrees());
                         return autoAimDrive.withVelocityX(xVel).withVelocityY(yVel)
                                            .withTargetDirection(solution.chassisAimAngle);
                     }
-                    
-                    // Fallback to manual rotation via Axis 3 if the ballistic solver fails to find a shot
-                    double rotAxis = RobotBase.isSimulation() ? joystick.getHID().getRawAxis(3) : joystick.getRightX();
-                    return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.1) * MaxAngularRate);
+                    return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(0);
                 }),
 
-                // 2. Shooter/Hood/Indexer control
                 Commands.run(() -> {
-                    FiringSolution solution = drivetrain.getCurrentFiringSolution();
-                    if (solution == null) {
-                        indexer.stopFeeder();
-                        return;
-                    }
-
-                    hood.setTargetAngle(solution.hoodAimAngle);
-                    shooter.setTargetVelocity(solution.shotVelocityMps);
-
-                    if (drivetrain.isChassisAimed(solution.chassisAimAngle) && 
-                        hood.isAtAngle(solution.hoodAimAngle) && 
-                        shooter.isAtVelocity(solution.shotVelocityMps)) {
-                        indexer.feedAllBalls();
-                    } else {
-                        indexer.stopFeeder();
+                    FiringSolution sol = drivetrain.getCurrentFiringSolution(); 
+                    if (sol != null) {
+                        hood.setTargetAngle(sol.hoodAimAngle);
+                        shooter.setTargetVelocity(sol.shotVelocityMps);
+                        if (drivetrain.isChassisAimed(sol.chassisAimAngle)) {
+                            indexer.feedAllBalls();
+                        }
                     }
                 }, hood, shooter, indexer)
             )
-        ).onFalse(
-            Commands.runOnce(() -> {
-                shooter.stop();
-                indexer.stopFeeder();
-            })
-        );
+        ).onFalse(Commands.runOnce(() -> { shooter.stop(); indexer.stopFeeder(); }));
+
+        // --- CALIBRATION BINDING ---
+        // Pressing the "Back" button forces the robot to instantly calibrate to the starting position
+        // This is a great way to "Establish where the robot is" without cameras during teleop testing.
+        joystick.back().onTrue(drivetrain.runOnce(() -> {
+            Pose2d startPose = new Pose2d(4.047, 0.629, Rotation2d.fromDegrees(-5.540));
+            drivetrain.resetPose(startPose);
+        }));
     }
 
     public void updateTelemetry() {
         try {
-            logger.telemeterizeMechanisms(
-                hood.getCurrentAngleDegrees(),
-                indexer.getPositionRotations(),
-                shooter.getPositionRotations(),
-                climber.getExtensionMeters()
-            );
+            logger.telemeterizeMechanisms(hood.getCurrentAngleDegrees(), indexer.getPositionRotations(), shooter.getPositionRotations(), climber.getExtensionMeters());
         } catch (Exception e) {}
     }
 

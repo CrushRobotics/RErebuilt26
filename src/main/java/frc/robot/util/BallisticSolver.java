@@ -4,68 +4,79 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
+import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
 
 public class BallisticSolver {
+    
+    // Maps distance to the target (in meters) -> to Target Shooter Velocity (M/s or RPM)
+    private static final InterpolatingDoubleTreeMap velocityMap = new InterpolatingDoubleTreeMap();
+    
+    // Maps distance to the target (in meters) -> to Target Hood Angle (Degrees)
+    private static final InterpolatingDoubleTreeMap hoodMap = new InterpolatingDoubleTreeMap();
 
-    // --- ROBOT DIMENSIONS / OFFSETS ---
-    // User: "Shooter is in the center of the robot, aligned to the back. Intake/Shooter face the same way."
-    // This means the exit point is physically behind the center, but fires FORWARD.
-    private static final double SHOOTER_OFFSET_X = -0.35; 
-    private static final double SHOOTER_OFFSET_Y = 0.0; 
+    static {
+        // ==========================================
+        // TODO: TUNE THESE VALUES ON THE REAL ROBOT!
+        // Measure your distance from the target goal, find the perfect shot, and add it here.
+        // The robot will automatically interpolate smoothly between these distances.
+        // ==========================================
+        
+        // Format: .put(Distance_In_Meters, Target_Value);
+        
+        // --- Velocity Map (Distance -> Speed) ---
+        velocityMap.put(1.3, 10.0); // Point-blank / Bumper-to-goal shot
+        velocityMap.put(2.0, 12.5); // Short range
+        velocityMap.put(3.0, 15.0); // Mid range
+        velocityMap.put(4.0, 18.0); // Far shot
+        velocityMap.put(5.5, 22.0); // Very far / Cross-zone shot
+
+        // --- Hood Map (Distance -> Angle Degrees) ---
+        hoodMap.put(1.3, 15.0); // Lower angle for point-blank shots
+        hoodMap.put(2.0, 25.0);
+        hoodMap.put(3.0, 35.0);
+        hoodMap.put(4.0, 42.0);
+        hoodMap.put(5.5, 48.0); // Higher angle to arc it in from far away
+    }
 
     public static class FiringSolution {
-        public final double shotVelocityMps;
-        public final Rotation2d hoodAimAngle;
-        public final Rotation2d chassisAimAngle;
+        public Rotation2d chassisAimAngle;
+        public double hoodAimAngle;
+        public double shotVelocityMps;
 
-        public FiringSolution(double velocity, Rotation2d hoodAngle, Rotation2d chassisAngle) {
-            this.shotVelocityMps = velocity;
-            this.hoodAimAngle = hoodAngle;
-            this.chassisAimAngle = chassisAngle;
+        public FiringSolution(Rotation2d chassisAimAngle, double hoodAimAngle, double shotVelocityMps) {
+            this.chassisAimAngle = chassisAimAngle;
+            this.hoodAimAngle = hoodAimAngle;
+            this.shotVelocityMps = shotVelocityMps;
         }
     }
 
     /**
-     * Solves for the required robot heading and shooter parameters.
-     * @param robotVx Field-relative X velocity (m/s)
-     * @param robotVy Field-relative Y velocity (m/s)
+     * Calculates the perfect aiming configuration based on your distance to the target
+     * and compensates for your current driving velocity.
      */
-    public static FiringSolution solveShot(Pose2d robotPose, Pose3d targetHub, double robotVx, double robotVy, double shooterHeight) {
-        // 1. Initial distance from center
-        double centerDx = targetHub.getX() - robotPose.getX();
-        double centerDy = targetHub.getY() - robotPose.getY();
-        double groundDistanceCenter = Math.sqrt(centerDx * centerDx + centerDy * centerDy);
+    public static FiringSolution solveShot(Pose2d robotPose, Pose3d targetPose, double vx, double vy, double shooterHeight) {
+        // 1. Calculate direct distance to the target (2D distance)
+        Translation2d targetTranslation = new Translation2d(targetPose.getX(), targetPose.getY());
+        double distanceToTarget = robotPose.getTranslation().getDistance(targetTranslation);
+
+        // 2. Velocity Compensation (Shoot-on-the-move calculation)
+        // Approximate the time the game piece is in the air (Distance / Avg Projectile Speed)
+        double approximateTimeOfFlight = distanceToTarget / 15.0; 
         
-        // 2. Realistic Exit Velocity (Typical FRC is 12-18 mps)
-        double exitVelocity = 15.0; 
-        
-        // Flight time estimate
-        double flightTime = groundDistanceCenter / (exitVelocity * 0.9);
+        // Calculate the "Virtual Target" - offsetting our aim by how much we will move while the projectile flies
+        Translation2d movingOffset = new Translation2d(vx * approximateTimeOfFlight, vy * approximateTimeOfFlight);
+        Translation2d virtualTarget = targetTranslation.minus(movingOffset);
 
-        // 3. VIRTUAL TARGET (Ballistic Compensation)
-        // We subtract the robot's motion from the goal's position. 
-        // If we drive right, we aim left of the hub.
-        double virtualX = targetHub.getX() - (robotVx * flightTime);
-        double virtualY = targetHub.getY() - (robotVy * flightTime);
-        Translation2d virtualTarget = new Translation2d(virtualX, virtualY);
+        // 3. Calculate Chassis Aim Angle to face the adjusted Virtual Target
+        Rotation2d chassisAimAngle = new Rotation2d(
+            virtualTarget.getX() - robotPose.getX(),
+            virtualTarget.getY() - robotPose.getY()
+        );
 
-        // 4. SHOOTER OFFSET COMPENSATION
-        // Since the shooter/intake face the SAME direction, chassis heading = shooter heading.
-        Rotation2d angleToTarget = new Rotation2d(virtualX - robotPose.getX(), virtualY - robotPose.getY());
-        
-        // Position of the shooter exit in the field frame
-        Translation2d shooterOffsetField = new Translation2d(SHOOTER_OFFSET_X, SHOOTER_OFFSET_Y).rotateBy(angleToTarget);
-        Translation2d shooterPosField = robotPose.getTranslation().plus(shooterOffsetField);
+        // 4. Look up dynamic Shooter Velocity and Hood Angle based on our actual distance
+        double targetVelocity = velocityMap.get(distanceToTarget);
+        double targetHoodAngle = hoodMap.get(distanceToTarget);
 
-        // Final vector from shooter exit to virtual target
-        double finalDx = virtualX - shooterPosField.getX();
-        double finalDy = virtualY - shooterPosField.getY();
-        Rotation2d finalChassisHeading = new Rotation2d(finalDx, finalDy);
-
-        // 5. Hood Angle based on distance from ACTUAL shooter exit
-        double finalDistance = shooterPosField.getDistance(virtualTarget);
-        Rotation2d hoodAngle = Rotation2d.fromDegrees(32.0 + (finalDistance * 1.95)); 
-
-        return new FiringSolution(exitVelocity, hoodAngle, finalChassisHeading);
+        return new FiringSolution(chassisAimAngle, targetHoodAngle, targetVelocity);
     }
 }

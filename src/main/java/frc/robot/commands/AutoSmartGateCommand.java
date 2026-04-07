@@ -4,6 +4,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj2.command.Command;
 
 import frc.robot.subsystems.CommandSwerveDrivetrain;
@@ -59,13 +60,13 @@ public class AutoSmartGateCommand extends Command {
             return;
         }
 
-        // 2. Spool the weapons
-        hood.setTargetAngle(solution.hoodAimAngle);
+        // 2. Spool the weapons (FIXED: Wrapped double in Rotation2d)
+        hood.setTargetAngle(Rotation2d.fromDegrees(solution.hoodAimAngle));
         shooter.setTargetVelocity(solution.shotVelocityMps);
 
-        // 3. The Triple Gate Check
+        // 3. The Triple Gate Check (FIXED: Wrapped double in Rotation2d)
         boolean isChassisReady = drivetrain.isChassisAimed(solution.chassisAimAngle);
-        boolean isHoodReady = hood.isAtAngle(solution.hoodAimAngle);
+        boolean isHoodReady = hood.isAtAngle(Rotation2d.fromDegrees(solution.hoodAimAngle));
         boolean isShooterReady = shooter.isAtVelocity(solution.shotVelocityMps);
 
         // 4. Fire if perfectly aligned!

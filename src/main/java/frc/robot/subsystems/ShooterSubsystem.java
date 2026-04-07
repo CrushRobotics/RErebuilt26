@@ -12,7 +12,6 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import dev.doglog.DogLog;
 
 public class ShooterSubsystem extends SubsystemBase {
-    // TODO: Verify your CAN IDs
     private static final int LEFT_KRAKEN_ID = 20;
     private static final int RIGHT_KRAKEN_ID = 21;
 

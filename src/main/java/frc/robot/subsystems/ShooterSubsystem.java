@@ -1,126 +1,132 @@
 package frc.robot.subsystems;
 
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
-import com.ctre.phoenix6.controls.Follower;
-import com.ctre.phoenix6.controls.VelocityVoltage;
+import com.ctre.phoenix6.controls.VoltageOut;
 import com.ctre.phoenix6.hardware.TalonFX;
-import com.ctre.phoenix6.signals.MotorAlignmentValue;
+import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 
-import edu.wpi.first.math.util.Units;
-import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import dev.doglog.DogLog;
+import edu.wpi.first.math.MathUtil;
+import edu.wpi.first.math.controller.PIDController;
+import edu.wpi.first.math.controller.SimpleMotorFeedforward;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 public class ShooterSubsystem extends SubsystemBase {
-    private static final int LEFT_KRAKEN_ID = 20;
-    private static final int RIGHT_KRAKEN_ID = 21;
 
-    // IMPORTANT: Verify the physical diameter of your shooter wheels (e.g., 4 inches)
-    private static final double WHEEL_DIAMETER_METERS = Units.inchesToMeters(4.0);
-    
-    // GEARING: Krakens to Shooter Wheels is 1:1.6 (Overdrive).
-    // 1 rotation of the motor = 1.6 rotations of the wheel.
-    private static final double WHEEL_ROTATIONS_PER_MOTOR_ROTATION = 1.6; 
+    // Top motor (ID 12) and Bottom motor (ID 13) on the "crushswerve" CANivore
+    private final TalonFX topMotor    = new TalonFX(12, "CrushSwerve");
+    private final TalonFX bottomMotor = new TalonFX(13, "CrushSwerve");
 
-    private final TalonFX leftMotor;
-    private final TalonFX rightMotor;
+    // Raw voltage control request
+    private final VoltageOut voltageRequest = new VoltageOut(0.0);
 
-    // CTRE Phoenix 6 Velocity control request (Voltage-based is usually best for flywheels)
-    private final VelocityVoltage velocityRequest = new VelocityVoltage(0).withSlot(0);
-    
-    private double currentTargetRpm = 0.0;
+    // kS = voltage to overcome static friction - keep this low
+    // kV = voltage to hold 1 m/s - if too high the motors never back off at speed
+    private final SimpleMotorFeedforward feedforward = new SimpleMotorFeedforward(0.1, 0.2);
+
+    // PID trims error that feedforward misses
+    private final PIDController pid = new PIDController(0.1, 0.0, 0.0);
+
+    private double targetVelocityMps = 0.0;
+
+    // Update this to match your actual wheel diameter (default: 4 inch wheel)
+    private static final double WHEEL_CIRCUMFERENCE_METERS = 0.1016 * Math.PI;
 
     public ShooterSubsystem() {
-        leftMotor = new TalonFX(LEFT_KRAKEN_ID);
-        rightMotor = new TalonFX(RIGHT_KRAKEN_ID);
 
+        // --- TOP MOTOR CONFIG ---
         TalonFXConfiguration config = new TalonFXConfiguration();
-        
-        // --- KRAKEN X60 HEAVY BRASS FLYWHEEL TUNING ---
-        // MOI: 4 lbs*in^2 requires aggressive recovery but relies heavily on Feedforward
-        
-        // kS (Static Friction): Volts needed to just break static friction (usually 0.1 - 0.25)
-        config.Slot0.kS = 0.15;
-        
-        // kV (Velocity Feedforward): Volts per RPS. 
-        // A Kraken free spins at ~100 RPS at 12V. 12V / 100RPS = 0.12 V/RPS.
-        config.Slot0.kV = 0.12; 
-        
-        // kP (Proportional): Added voltage per 1 RPS of error. 
-        // Bumped from 0.11 to 0.5 to aggressively fight the high MOI during spin-up and recovery.
-        config.Slot0.kP = 0.50; 
-        
-        config.Slot0.kI = 0.0; // Keep 0 for flywheels
-        config.Slot0.kD = 0.0; // Rarely needed for flywheels (the heavy mass dampens oscillations naturally)
-
-        // Make sure it coasts! Braking a brass flywheel will destroy your motor controllers.
         config.MotorOutput.NeutralMode = NeutralModeValue.Coast;
-        
-        // Optional but recommended for heavy flywheels: Add a stator current limit 
-        // to prevent browning out the robot during the initial massive spin-up draw
-        config.CurrentLimits.StatorCurrentLimit = 80.0; // Amps
+        config.MotorOutput.Inverted    = InvertedValue.Clockwise_Positive;
+        // Stator limit caps torque, supply limit caps total power draw from battery
+        config.CurrentLimits.StatorCurrentLimit       = 40.0;
         config.CurrentLimits.StatorCurrentLimitEnable = true;
-
-        leftMotor.getConfigurator().apply(config);
-        rightMotor.getConfigurator().apply(config);
-        rightMotor.setControl(new Follower(leftMotor.getDeviceID(), MotorAlignmentValue.Aligned));
+        config.CurrentLimits.SupplyCurrentLimit       = 30.0;
+        config.CurrentLimits.SupplyCurrentLimitEnable = true;
+        topMotor.getConfigurator().apply(config);
+        bottomMotor.getConfigurator().apply(config);
     }
 
+    /** Set the target surface velocity for both flywheels in meters per second. */
     public void setTargetVelocity(double velocityMps) {
-        double targetRpm = convertMpsToRpm(velocityMps);
-        this.currentTargetRpm = targetRpm;
-
-        // Phoenix 6 expects Rotations Per Second (RPS)
-        double rotationsPerSecond = targetRpm / 60.0;
-        leftMotor.setControl(velocityRequest.withVelocity(rotationsPerSecond));
+        targetVelocityMps = velocityMps;
     }
 
-    public double getCurrentTargetRpm() {
-        return currentTargetRpm;
-    }
-
-    public boolean isAtVelocity(double targetVelocityMps) {
-        double targetRpm = convertMpsToRpm(targetVelocityMps);
-        
-        // Phoenix 6 reports velocity in RPS, convert to RPM
-        double currentRpm = leftMotor.getVelocity().getValueAsDouble() * 60.0;
-        
-        // Smart Gate Check: Are we within 100 RPM of the exact ballistic target?
-        // With heavy brass flywheels, you might be able to tighten this to 50 RPM once tuned.
-        return Math.abs(currentRpm - targetRpm) < 100.0; 
-    }
-
+    /** Immediately cuts power and coasts both motors to a stop. */
     public void stop() {
-        leftMotor.setControl(new com.ctre.phoenix6.controls.DutyCycleOut(0));
-        currentTargetRpm = 0;
+        targetVelocityMps = 0.0;
+        topMotor.setControl(voltageRequest.withOutput(0.0));
+        bottomMotor.setControl(voltageRequest.withOutput(0.0));
     }
-    
-    /**
-     * Gets the current rotations of the shooter wheel.
-     * Used to spin the 3D mechanism in AdvantageScope.
-     */
+
+    /** Returns the top motor position in rotations. */
     public double getPositionRotations() {
-        // Multiply motor rotations by the gear ratio to get true wheel rotations
-        return leftMotor.getPosition().getValueAsDouble() * WHEEL_ROTATIONS_PER_MOTOR_ROTATION;
+        return topMotor.getPosition().getValueAsDouble();
+    }
+
+    /** Returns the top flywheel surface velocity in meters per second. */
+    public double getTopVelocityMps() {
+        return topMotor.getVelocity().getValueAsDouble() * WHEEL_CIRCUMFERENCE_METERS;
+    }
+
+    /** Returns the bottom flywheel surface velocity in meters per second. */
+    public double getBottomVelocityMps() {
+        return bottomMotor.getVelocity().getValueAsDouble() * WHEEL_CIRCUMFERENCE_METERS;
     }
 
     /**
-     * Converts linear exit velocity (m/s) to target Motor RPM.
+     * Returns true when both flywheels are within tolerance of the requested speed.
+     * Tolerance is 1.0 m/s — tighten it if you need more precision before shooting.
      */
-    private double convertMpsToRpm(double metersPerSecond) {
-        // Linear Velocity = RPM * Circumference / 60
-        // Therefore: RPM = (Velocity * 60) / (PI * Diameter)
-        double targetWheelRPM = (metersPerSecond * 60.0) / (Math.PI * WHEEL_DIAMETER_METERS);
-        
-        // Divide by the overdrive ratio to get the target MOTOR RPM
-        // e.g., to spin the wheels at 4800 RPM, the motor only needs to spin at 3000 RPM
-        return targetWheelRPM / WHEEL_ROTATIONS_PER_MOTOR_ROTATION;
+    public boolean isAtVelocity(double velocityMps) {
+        final double toleranceMps = 1.0;
+        boolean topOk    = Math.abs(getTopVelocityMps()    - velocityMps) <= toleranceMps;
+        boolean bottomOk = Math.abs(getBottomVelocityMps() - velocityMps) <= toleranceMps;
+        return topOk && bottomOk;
     }
 
     @Override
     public void periodic() {
-        // Log both the current actual RPM and the current Target RPM
-        DogLog.log("Shooter/CurrentRPM", leftMotor.getVelocity().getValueAsDouble() * 60.0);
-        DogLog.log("Shooter/TargetRPM", currentTargetRpm);
+
+        // Coast to a stop when no velocity is requested
+        if (targetVelocityMps == 0.0) {
+            topMotor.setControl(voltageRequest.withOutput(0.0));
+            bottomMotor.setControl(voltageRequest.withOutput(0.0));
+            SmartDashboard.putNumber("Shooter/CommandedVolts", 0.0);
+            return;
+        }
+
+        // 1. Feedforward — does the bulk of the work to reach speed quickly
+        double ffVolts = feedforward.calculate(targetVelocityMps);
+
+        // 2. PID — trims steady-state error using the top motor as the reference sensor
+        double pidVolts = pid.calculate(getTopVelocityMps(), targetVelocityMps);
+
+        // 3. Clamp to safe battery voltage range
+        double totalVolts = MathUtil.clamp(ffVolts + pidVolts, -12.0, 12.0);
+
+        // 4. Send the same voltage to both motors.
+        //    Directional difference is handled by the opposite InvertedValue configs above,
+        //    so both motors physically push the note in the same direction.
+        topMotor.setControl(voltageRequest.withOutput(totalVolts));
+        bottomMotor.setControl(voltageRequest.withOutput(totalVolts));
+
+        // --- SmartDashboard telemetry ---
+        SmartDashboard.putNumber("Shooter/CommandedVolts",      totalVolts);
+        SmartDashboard.putNumber("Shooter/TargetVelocityMps",   targetVelocityMps);
+        SmartDashboard.putNumber("Shooter/TopVelocityMps",      getTopVelocityMps());
+        SmartDashboard.putNumber("Shooter/BottomVelocityMps",   getBottomVelocityMps());
+        SmartDashboard.putNumber("Shooter/TopCurrentAmps",      topMotor.getStatorCurrent().getValueAsDouble());
+        SmartDashboard.putNumber("Shooter/BottomCurrentAmps",   bottomMotor.getStatorCurrent().getValueAsDouble());
+        SmartDashboard.putBoolean("Shooter/AtTargetSpeed",      isAtVelocity(targetVelocityMps));
+
+        // --- DogLog telemetry ---
+        DogLog.log("Shooter/TargetVelocityMps", targetVelocityMps);
+        DogLog.log("Shooter/TopVelocityMps",    getTopVelocityMps());
+        DogLog.log("Shooter/BottomVelocityMps", getBottomVelocityMps());
+        DogLog.log("Shooter/AppliedVolts",      totalVolts);
+        DogLog.log("Shooter/IsAtTargetSpeed",   isAtVelocity(targetVelocityMps));
     }
 }

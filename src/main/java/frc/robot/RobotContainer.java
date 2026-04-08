@@ -80,9 +80,11 @@ public class RobotContainer {
         drivetrain.setDefaultCommand(
             drivetrain.applyRequest(() -> {
                 double rotAxis = RobotBase.isSimulation() ? joystick.getHID().getRawAxis(3) : joystick.getRightX();
+                
+                // Increased the rotational deadband from 0.1 to 0.15 to reject Xbox controller stick drift
                 return drive.withVelocityX(-MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed)
                     .withVelocityY(-MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed)
-                    .withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.1) * MaxAngularRate);
+                    .withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.15) * MaxAngularRate);
             })
         );
 
@@ -197,14 +199,38 @@ public class RobotContainer {
             }, intake)
         );
 
-        // --- INTAKE ROLLERS (X BUTTON TOGGLE) ---
-        joystick.x().toggleOnTrue(
+        // --- MANUAL SHOOTER TEST (X BUTTON) ---
+        joystick.x().whileTrue(
+            Commands.run(() -> {
+                shooter.setTargetVelocity(15.0); // 15 m/s test speed
+            }, shooter)
+        ).onFalse(
+            Commands.runOnce(() -> shooter.stop(), shooter)
+        );
+
+        // --- INTAKE ROLLERS (Y BUTTON TOGGLE) ---
+        joystick.y().toggleOnTrue(
             Commands.run(() -> {
                 intake.runIntakeRollers();
             }, intake)
             .finallyDo(() -> {
                 intake.stopIntakeRollers();
             })
+        );
+
+        // --- MANUAL HOOD TEST (D-PAD UP/DOWN) ---
+        joystick.povUp().whileTrue(
+            Commands.run(() -> {
+                // Jog the hood up based on the TARGET angle, not the current angle
+                hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() + 0.1));
+            }, hood)
+        );
+
+        joystick.povDown().whileTrue(
+            Commands.run(() -> {
+                // Jog the hood down based on the TARGET angle, not the current angle
+                hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() - 0.1));
+            }, hood)
         );
 
         // --- CALIBRATION BINDING (BACK BUTTON) ---
@@ -222,9 +248,12 @@ public class RobotContainer {
             DogLog.log("Controller/ButtonA_Held", joystick.getHID().getAButton());
             DogLog.log("Controller/ButtonB_Held", joystick.getHID().getBButton());
             DogLog.log("Controller/ButtonX_Held", joystick.getHID().getXButton());
+            DogLog.log("Controller/ButtonY_Held", joystick.getHID().getYButton());
             DogLog.log("Controller/RightBumper_Held", joystick.getHID().getRightBumper());
             DogLog.log("Controller/LeftBumper_Held", joystick.getHID().getLeftBumper());
             DogLog.log("Controller/BackButton_Held", joystick.getHID().getBackButton());
+            DogLog.log("Controller/POV_Up", joystick.getHID().getPOV() == 0);
+            DogLog.log("Controller/POV_Down", joystick.getHID().getPOV() == 180);
             
             DogLog.log("Controller/LeftY_Axis", joystick.getLeftY());
             DogLog.log("Controller/LeftX_Axis", joystick.getLeftX());

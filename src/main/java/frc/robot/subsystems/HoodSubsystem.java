@@ -54,10 +54,8 @@ public class HoodSubsystem extends SubsystemBase {
     }
 
     public void setTargetAngle(Rotation2d angle) {
-        // If the target is changing, reset the profile so it plans a smooth curve from our CURRENT position
-        if (targetAngle.getDegrees() != angle.getDegrees()) {
-            profiledPID.reset(getCurrentAngleDegrees());
-        }
+        // The ProfiledPIDController handles dynamic setpoint changes natively.
+        // Do NOT reset it here, or it will stutter during auto-aim tracking.
         targetAngle = angle;
     }
 

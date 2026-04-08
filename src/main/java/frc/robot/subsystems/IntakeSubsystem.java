@@ -18,7 +18,7 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 public class IntakeSubsystem extends SubsystemBase {
     private static final int INTAKE_PIVOT_ID = 3;
-    private static final int INTAKE_MOTOR_ID = 41; // Replace with your actual TalonFX CAN ID
+    private static final int INTAKE_MOTOR_ID = 14; // Replace with your actual TalonFX CAN ID
     
     // --- Setpoints (TUNE THESE ON THE REAL ROBOT!) ---
     private static final double DEPLOYED_POSITION_ROTATIONS = 15.0; // The encoder value when fully down

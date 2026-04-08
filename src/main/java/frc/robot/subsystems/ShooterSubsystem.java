@@ -10,6 +10,7 @@ import dev.doglog.DogLog;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.controller.SimpleMotorFeedforward;
+import edu.wpi.first.math.filter.SlewRateLimiter;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
@@ -22,29 +23,56 @@ public class ShooterSubsystem extends SubsystemBase {
     // Raw voltage control request
     private final VoltageOut voltageRequest = new VoltageOut(0.0);
 
-    // kS = voltage to overcome static friction - keep this low
-    // kV = voltage to hold 1 m/s - if too high the motors never back off at speed
-    private final SimpleMotorFeedforward feedforward = new SimpleMotorFeedforward(0.1, 0.2);
+    // kS = voltage to overcome static friction
+    // kV = voltage to hold 1 m/s
+    private final SimpleMotorFeedforward feedforward =
+        new SimpleMotorFeedforward(0.1, 0.2);
 
     // PID trims error that feedforward misses
-    private final PIDController pid = new PIDController(0.1, 0.0, 0.0);
+    private final PIDController pid =
+        new PIDController(0.1, 0.0, 0.0);
 
     private double targetVelocityMps = 0.0;
 
-    // Update this to match your actual wheel diameter (default: 4 inch wheel)
-    private static final double WHEEL_CIRCUMFERENCE_METERS = 0.1016 * Math.PI;
+    // --- NEW: Voltage ramp rate limiter ---
+    // Units: Volts per second
+    // This directly controls spin-up aggressiveness.
+    //
+    // Recommended tuning:
+    // 8.0  = fast (~1.5s spin-up)
+    // 6.0  = safe competition default
+    // 4.0  = very gentle (lowest current spike)
+    //
+    private static final double VOLTAGE_RAMP_RATE = 4.0;
+
+    private final SlewRateLimiter voltageRampLimiter =
+        new SlewRateLimiter(VOLTAGE_RAMP_RATE);
+
+    // Update this to match your actual wheel diameter
+    // Default: 4 inch wheel
+    private static final double WHEEL_CIRCUMFERENCE_METERS =
+        0.1016 * Math.PI;
 
     public ShooterSubsystem() {
 
-        // --- TOP MOTOR CONFIG ---
         TalonFXConfiguration config = new TalonFXConfiguration();
-        config.MotorOutput.NeutralMode = NeutralModeValue.Coast;
-        config.MotorOutput.Inverted    = InvertedValue.Clockwise_Positive;
-        // Stator limit caps torque, supply limit caps total power draw from battery
-        config.CurrentLimits.StatorCurrentLimit       = 40.0;
+
+        config.MotorOutput.NeutralMode =
+            NeutralModeValue.Coast;
+
+        config.MotorOutput.Inverted =
+            InvertedValue.Clockwise_Positive;
+
+        // --- Current Limits ---
+        // Stator = torque limit
+        // Supply = battery protection
+
+        config.CurrentLimits.StatorCurrentLimit = 40.0;
         config.CurrentLimits.StatorCurrentLimitEnable = true;
-        config.CurrentLimits.SupplyCurrentLimit       = 30.0;
+
+        config.CurrentLimits.SupplyCurrentLimit = 30.0;
         config.CurrentLimits.SupplyCurrentLimitEnable = true;
+
         topMotor.getConfigurator().apply(config);
         bottomMotor.getConfigurator().apply(config);
     }
@@ -56,77 +84,194 @@ public class ShooterSubsystem extends SubsystemBase {
 
     /** Immediately cuts power and coasts both motors to a stop. */
     public void stop() {
+
         targetVelocityMps = 0.0;
-        topMotor.setControl(voltageRequest.withOutput(0.0));
-        bottomMotor.setControl(voltageRequest.withOutput(0.0));
+
+        // --- NEW: reset ramp limiter ---
+        voltageRampLimiter.reset(0.0);
+
+        topMotor.setControl(
+            voltageRequest.withOutput(0.0)
+        );
+
+        bottomMotor.setControl(
+            voltageRequest.withOutput(0.0)
+        );
     }
 
     /** Returns the top motor position in rotations. */
     public double getPositionRotations() {
-        return topMotor.getPosition().getValueAsDouble();
+        return topMotor
+            .getPosition()
+            .getValueAsDouble();
     }
 
     /** Returns the top flywheel surface velocity in meters per second. */
     public double getTopVelocityMps() {
-        return topMotor.getVelocity().getValueAsDouble() * WHEEL_CIRCUMFERENCE_METERS;
+        return topMotor
+            .getVelocity()
+            .getValueAsDouble()
+            * WHEEL_CIRCUMFERENCE_METERS;
     }
 
     /** Returns the bottom flywheel surface velocity in meters per second. */
     public double getBottomVelocityMps() {
-        return bottomMotor.getVelocity().getValueAsDouble() * WHEEL_CIRCUMFERENCE_METERS;
+        return bottomMotor
+            .getVelocity()
+            .getValueAsDouble()
+            * WHEEL_CIRCUMFERENCE_METERS;
     }
 
     /**
      * Returns true when both flywheels are within tolerance of the requested speed.
-     * Tolerance is 1.0 m/s — tighten it if you need more precision before shooting.
      */
     public boolean isAtVelocity(double velocityMps) {
+
         final double toleranceMps = 1.0;
-        boolean topOk    = Math.abs(getTopVelocityMps()    - velocityMps) <= toleranceMps;
-        boolean bottomOk = Math.abs(getBottomVelocityMps() - velocityMps) <= toleranceMps;
+
+        boolean topOk =
+            Math.abs(
+                getTopVelocityMps()
+                - velocityMps
+            ) <= toleranceMps;
+
+        boolean bottomOk =
+            Math.abs(
+                getBottomVelocityMps()
+                - velocityMps
+            ) <= toleranceMps;
+
         return topOk && bottomOk;
     }
 
     @Override
     public void periodic() {
 
-        // Coast to a stop when no velocity is requested
+        // Coast to stop if no velocity requested
         if (targetVelocityMps == 0.0) {
-            topMotor.setControl(voltageRequest.withOutput(0.0));
-            bottomMotor.setControl(voltageRequest.withOutput(0.0));
-            SmartDashboard.putNumber("Shooter/CommandedVolts", 0.0);
+
+            topMotor.setControl(
+                voltageRequest.withOutput(0.0)
+            );
+
+            bottomMotor.setControl(
+                voltageRequest.withOutput(0.0)
+            );
+
+            SmartDashboard.putNumber(
+                "Shooter/CommandedVolts",
+                0.0
+            );
+
             return;
         }
 
-        // 1. Feedforward — does the bulk of the work to reach speed quickly
-        double ffVolts = feedforward.calculate(targetVelocityMps);
+        // 1. Feedforward
+        double ffVolts =
+            feedforward.calculate(
+                targetVelocityMps
+            );
 
-        // 2. PID — trims steady-state error using the top motor as the reference sensor
-        double pidVolts = pid.calculate(getTopVelocityMps(), targetVelocityMps);
+        // 2. PID correction
+        double pidVolts =
+            pid.calculate(
+                getTopVelocityMps(),
+                targetVelocityMps
+            );
 
-        // 3. Clamp to safe battery voltage range
-        double totalVolts = MathUtil.clamp(ffVolts + pidVolts, -12.0, 12.0);
+        // 3. Clamp to battery limits
+        double rawVolts =
+            MathUtil.clamp(
+                ffVolts + pidVolts,
+                -12.0,
+                12.0
+            );
 
-        // 4. Send the same voltage to both motors.
-        //    Directional difference is handled by the opposite InvertedValue configs above,
-        //    so both motors physically push the note in the same direction.
-        topMotor.setControl(voltageRequest.withOutput(totalVolts));
-        bottomMotor.setControl(voltageRequest.withOutput(totalVolts));
+        // --- NEW: Apply ramp limiting ---
+        double totalVolts =
+            voltageRampLimiter.calculate(
+                rawVolts
+            );
+
+        // 4. Apply to motors
+        topMotor.setControl(
+            voltageRequest.withOutput(
+                totalVolts
+            )
+        );
+
+        bottomMotor.setControl(
+            voltageRequest.withOutput(
+                totalVolts
+            )
+        );
 
         // --- SmartDashboard telemetry ---
-        SmartDashboard.putNumber("Shooter/CommandedVolts",      totalVolts);
-        SmartDashboard.putNumber("Shooter/TargetVelocityMps",   targetVelocityMps);
-        SmartDashboard.putNumber("Shooter/TopVelocityMps",      getTopVelocityMps());
-        SmartDashboard.putNumber("Shooter/BottomVelocityMps",   getBottomVelocityMps());
-        SmartDashboard.putNumber("Shooter/TopCurrentAmps",      topMotor.getStatorCurrent().getValueAsDouble());
-        SmartDashboard.putNumber("Shooter/BottomCurrentAmps",   bottomMotor.getStatorCurrent().getValueAsDouble());
-        SmartDashboard.putBoolean("Shooter/AtTargetSpeed",      isAtVelocity(targetVelocityMps));
+
+        SmartDashboard.putNumber(
+            "Shooter/CommandedVolts",
+            totalVolts
+        );
+
+        SmartDashboard.putNumber(
+            "Shooter/TargetVelocityMps",
+            targetVelocityMps
+        );
+
+        SmartDashboard.putNumber(
+            "Shooter/TopVelocityMps",
+            getTopVelocityMps()
+        );
+
+        SmartDashboard.putNumber(
+            "Shooter/BottomVelocityMps",
+            getBottomVelocityMps()
+        );
+
+        SmartDashboard.putNumber(
+            "Shooter/TopCurrentAmps",
+            topMotor
+                .getStatorCurrent()
+                .getValueAsDouble()
+        );
+
+        SmartDashboard.putNumber(
+            "Shooter/BottomCurrentAmps",
+            bottomMotor
+                .getStatorCurrent()
+                .getValueAsDouble()
+        );
+
+        SmartDashboard.putBoolean(
+            "Shooter/AtTargetSpeed",
+            isAtVelocity(targetVelocityMps)
+        );
 
         // --- DogLog telemetry ---
-        DogLog.log("Shooter/TargetVelocityMps", targetVelocityMps);
-        DogLog.log("Shooter/TopVelocityMps",    getTopVelocityMps());
-        DogLog.log("Shooter/BottomVelocityMps", getBottomVelocityMps());
-        DogLog.log("Shooter/AppliedVolts",      totalVolts);
-        DogLog.log("Shooter/IsAtTargetSpeed",   isAtVelocity(targetVelocityMps));
+
+        DogLog.log(
+            "Shooter/TargetVelocityMps",
+            targetVelocityMps
+        );
+
+        DogLog.log(
+            "Shooter/TopVelocityMps",
+            getTopVelocityMps()
+        );
+
+        DogLog.log(
+            "Shooter/BottomVelocityMps",
+            getBottomVelocityMps()
+        );
+
+        DogLog.log(
+            "Shooter/AppliedVolts",
+            totalVolts
+        );
+
+        DogLog.log(
+            "Shooter/IsAtTargetSpeed",
+            isAtVelocity(targetVelocityMps)
+        );
     }
 }

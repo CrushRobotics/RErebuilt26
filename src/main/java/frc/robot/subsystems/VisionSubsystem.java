@@ -32,9 +32,9 @@ public class VisionSubsystem extends SubsystemBase {
     // Transform3d = robot center -> camera (x forward, y left, z up, in meters)
     // -------------------------------------------------------------------------
     private static final Transform3d CAMERA_1_TRANSFORM = new Transform3d(
-        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 0, 0)); 
+        new Translation3d(0.27, 0.0, 0.0), new Rotation3d(0, 28, 0)); 
     private static final Transform3d CAMERA_2_TRANSFORM = new Transform3d(
-        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 0, 0)); 
+        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 28, 0)); 
     private static final Transform3d CAMERA_3_TRANSFORM = new Transform3d(
         new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 0, 0)); 
     // -------------------------------------------------------------------------

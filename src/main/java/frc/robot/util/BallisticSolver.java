@@ -8,34 +8,27 @@ import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
 
 public class BallisticSolver {
     
-    // Maps distance to the target (in meters) -> to Target Shooter Velocity (M/s or RPM)
     private static final InterpolatingDoubleTreeMap velocityMap = new InterpolatingDoubleTreeMap();
-    
-    // Maps distance to the target (in meters) -> to Target Hood Angle (Degrees)
     private static final InterpolatingDoubleTreeMap hoodMap = new InterpolatingDoubleTreeMap();
 
     static {
-        // ==========================================
-        // TODO: TUNE THESE VALUES ON THE REAL ROBOT!
-        // Measure your distance from the target goal, find the perfect shot, and add it here.
-        // The robot will automatically interpolate smoothly between these distances.
-        // ==========================================
-        
-        // Format: .put(Distance_In_Meters, Target_Value);
-        
-        // --- Velocity Map (Distance -> Speed) ---
-        velocityMap.put(1.3, 10.0); // Point-blank / Bumper-to-goal shot
-        velocityMap.put(2.0, 12.5); // Short range
-        velocityMap.put(3.0, 15.0); // Mid range
-        velocityMap.put(4.0, 18.0); // Far shot
-        velocityMap.put(5.5, 22.0); // Very far / Cross-zone shot
+        // --- Velocity Map (Distance in Meters -> Speed in Mps) ---
+        // Added 0.0 bound to ensure values are defined if the robot is touching the hub
+        velocityMap.put(0.0, 10.0); 
+        velocityMap.put(1.3, 10.0);
+        velocityMap.put(2.0, 12.5);
+        velocityMap.put(3.0, 15.0);
+        velocityMap.put(4.0, 18.0);
+        velocityMap.put(5.5, 22.0);
 
-        // --- Hood Map (Distance -> Angle Degrees) ---
-        hoodMap.put(1.3, 15.0); // Lower angle for point-blank shots
+        // --- Hood Map (Distance in Meters -> Angle in Degrees) ---
+        // Added 0.0 bound to ensure values are defined
+        hoodMap.put(0.0, 15.0);
+        hoodMap.put(1.3, 15.0);
         hoodMap.put(2.0, 25.0);
         hoodMap.put(3.0, 35.0);
         hoodMap.put(4.0, 42.0);
-        hoodMap.put(5.5, 48.0); // Higher angle to arc it in from far away
+        hoodMap.put(5.5, 48.0);
     }
 
     public static class FiringSolution {
@@ -51,29 +44,25 @@ public class BallisticSolver {
     }
 
     /**
-     * Calculates the perfect aiming configuration based on your distance to the target
-     * and compensates for your current driving velocity.
+     * Calculates the perfect aiming configuration based on field location.
      */
     public static FiringSolution solveShot(Pose2d robotPose, Pose3d targetPose, double vx, double vy, double shooterHeight) {
-        // 1. Calculate direct distance to the target (2D distance)
+        // Calculate direct 2D distance to the target hub
         Translation2d targetTranslation = new Translation2d(targetPose.getX(), targetPose.getY());
         double distanceToTarget = robotPose.getTranslation().getDistance(targetTranslation);
 
-        // 2. Velocity Compensation (Shoot-on-the-move calculation)
-        // Approximate the time the game piece is in the air (Distance / Avg Projectile Speed)
+        // Velocity Compensation (approximate 0.5s flight time for offset)
         double approximateTimeOfFlight = distanceToTarget / 15.0; 
-        
-        // Calculate the "Virtual Target" - offsetting our aim by how much we will move while the projectile flies
         Translation2d movingOffset = new Translation2d(vx * approximateTimeOfFlight, vy * approximateTimeOfFlight);
         Translation2d virtualTarget = targetTranslation.minus(movingOffset);
 
-        // 3. Calculate Chassis Aim Angle to face the adjusted Virtual Target
+        // Calculate Chassis Aim Angle
         Rotation2d chassisAimAngle = new Rotation2d(
             virtualTarget.getX() - robotPose.getX(),
             virtualTarget.getY() - robotPose.getY()
         );
 
-        // 4. Look up dynamic Shooter Velocity and Hood Angle based on our actual distance
+        // Interpolate Shooter Velocity and Hood Angle from distance maps
         double targetVelocity = velocityMap.get(distanceToTarget);
         double targetHoodAngle = hoodMap.get(distanceToTarget);
 

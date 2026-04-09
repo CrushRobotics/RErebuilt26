@@ -58,7 +58,6 @@ public class IndexerSubsystem extends SubsystemBase {
     public void stopFeeder() { stop(); }
 
     public double getPositionRotations() {
-        // We read from the NEO's encoder since the 775 likely doesn't have an encoder wired to the Spark Max
         return groundBarsEncoder.getPosition();
     }
 

@@ -44,6 +44,8 @@ public class RobotContainer {
 
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
     
+    // NOTE: If you are testing CAMERALESS on blocks, you can temporarily change this to:
+    // private final VisionSubsystem vision = null;
     @SuppressWarnings("unused")
     private final VisionSubsystem vision = RobotBase.isReal() ? new VisionSubsystem(drivetrain) : null;
     
@@ -209,6 +211,7 @@ public class RobotContainer {
         );
 
         // --- INTAKE ROLLERS (Y BUTTON TOGGLE) ---
+        // (Fixed syntax issue here)
         joystick.y().toggleOnTrue(
             Commands.run(() -> {
                 intake.runIntakeRollers();
@@ -218,22 +221,21 @@ public class RobotContainer {
             })
         );
 
-        // --- MANUAL HOOD TEST (D-PAD UP/DOWN) ---
-        joystick.povUp().whileTrue(
-            Commands.run(() -> {
-                // Jog the hood up based on the TARGET angle, not the current angle
-                hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() + 0.1));
-            }, hood)
+        // --- INTAKE PIVOT PRESETS (D-PAD) ---
+        joystick.povUp().onTrue(
+            Commands.runOnce(() -> intake.retract(), intake)
         );
 
-        joystick.povDown().whileTrue(
-            Commands.run(() -> {
-                // Jog the hood down based on the TARGET angle, not the current angle
-                hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() - 0.1));
-            }, hood)
+        joystick.povDown().onTrue(
+            Commands.runOnce(() -> intake.deploy(), intake)
+        );
+
+        joystick.povLeft().onTrue(
+            Commands.runOnce(() -> intake.halfDeploy(), intake)
         );
 
         // --- CALIBRATION BINDING (BACK BUTTON) ---
+        // Restored exactly as it was requested
         joystick.back().onTrue(drivetrain.runOnce(() -> {
             Pose2d startPose = new Pose2d(4.047, 0.629, Rotation2d.fromDegrees(-5.540));
             drivetrain.resetPose(startPose);
@@ -254,6 +256,7 @@ public class RobotContainer {
             DogLog.log("Controller/BackButton_Held", joystick.getHID().getBackButton());
             DogLog.log("Controller/POV_Up", joystick.getHID().getPOV() == 0);
             DogLog.log("Controller/POV_Down", joystick.getHID().getPOV() == 180);
+            DogLog.log("Controller/POV_Left", joystick.getHID().getPOV() == 270);
             
             DogLog.log("Controller/LeftY_Axis", joystick.getLeftY());
             DogLog.log("Controller/LeftX_Axis", joystick.getLeftX());

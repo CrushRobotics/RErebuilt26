@@ -14,19 +14,21 @@ import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 
 import dev.doglog.DogLog;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 public class IntakeSubsystem extends SubsystemBase {
     private static final int INTAKE_PIVOT_ID = 3;
-    private static final int INTAKE_MOTOR_ID = 14; // Replace with your actual TalonFX CAN ID
+    private static final int INTAKE_MOTOR_ID = 41; 
     
     // --- Setpoints (TUNE THESE ON THE REAL ROBOT!) ---
-    private static final double DEPLOYED_POSITION_ROTATIONS = 15.0; // The encoder value when fully down
+    private static final double DEPLOYED_POSITION_ROTATIONS = -16.404; // The encoder value when fully down
     private static final double RETRACTED_POSITION_ROTATIONS = 0.0;  // The encoder value when stowed
+    private static final double HALF_POSITION_ROTATIONS = -9.833; // A halfway point for testing and tuning
     
     // --- Testing Configuration ---
     // Use this extremely low limit (e.g., 5% output) when testing the 111:1 gear ratio
-    private static final double MAX_TEST_OUTPUT = 0.05; 
+    private static final double MAX_TEST_OUTPUT = 1.5; 
     
     private final SparkMax pivotMotor;
     private final RelativeEncoder pivotEncoder;
@@ -45,7 +47,7 @@ public class IntakeSubsystem extends SubsystemBase {
         config.idleMode(IdleMode.kBrake);
         
         // --- PID Constants ---
-        config.closedLoop.pid(0.05, 0.0, 0.0);
+        config.closedLoop.pid(1.5, 0.05, 0.0);
         
         // --- Output Limits ---
         // We set the absolute maximum voltage the PID is allowed to send to the motor.
@@ -54,9 +56,9 @@ public class IntakeSubsystem extends SubsystemBase {
         
         // --- Trapezoidal PID Configuration (REV MAXMotion) ---
         // This generates a smooth trapezoidal curve during movement (Profiled PID)
-        config.closedLoop.maxMotion.maxVelocity(100); // Drastically lowered for testing
-        config.closedLoop.maxMotion.maxAcceleration(200); // Drastically lowered for testing
-        config.closedLoop.maxMotion.allowedClosedLoopError(0.5);
+        config.closedLoop.maxMotion.maxVelocity(1800); // Drastically lowered for testing
+        config.closedLoop.maxMotion.maxAcceleration(2000); // Drastically lowered for testing
+        config.closedLoop.maxMotion.allowedClosedLoopError(0.01);
         
         // --- Optional Soft Limits ---
         // If you want to prevent the intake from smashing into the floor or the robot frame,
@@ -71,7 +73,8 @@ public class IntakeSubsystem extends SubsystemBase {
         pivotPid = pivotMotor.getClosedLoopController();
         
         // --- Intake Roller Motor Initialization (CTRE TalonFX/Falcon 500) ---
-        intakeMotor = new TalonFX(INTAKE_MOTOR_ID);
+        // Configured to run on the "CrushSwerve" CANbus
+        intakeMotor = new TalonFX(INTAKE_MOTOR_ID, "CrushSwerve");
         // Set to Coast mode so game pieces don't get stuck if the robot dies
         intakeMotor.setNeutralMode(NeutralModeValue.Coast);
     }
@@ -99,14 +102,14 @@ public class IntakeSubsystem extends SubsystemBase {
      * Spins the intake rollers to pull a game piece in.
      */
     public void runIntakeRollers() {
-        intakeMotor.set(0.8); // Tune this speed as needed
+        intakeMotor.set(1.0); // Tune this speed as needed
     }
     
     /**
      * Spins the intake rollers backwards to spit a game piece out.
      */
     public void reverseIntakeRollers() {
-        intakeMotor.set(-0.8);
+        intakeMotor.set(-1.0);
     }
     
     /**
@@ -131,6 +134,13 @@ public class IntakeSubsystem extends SubsystemBase {
     }
 
     /**
+     * Moves the intake to the halfway point using the profiled PID.
+     */
+    public void halfDeploy() {
+        setTargetPosition(HALF_POSITION_ROTATIONS);
+    }
+
+    /**
      * Instantly stops both the pivot motor and the intake rollers.
      */
     public void stopAll() {
@@ -151,5 +161,8 @@ public class IntakeSubsystem extends SubsystemBase {
         DogLog.log("Intake/PivotRotations", getPivotPosition());
         DogLog.log("Intake/PivotAppliedOutput", pivotMotor.getAppliedOutput());
         DogLog.log("Intake/RollerAppliedOutput", intakeMotor.get());
+        
+        // Output to SmartDashboard for real-time viewing and tuning
+        SmartDashboard.putNumber("Intake/PivotRotations", getPivotPosition());
     }
 }

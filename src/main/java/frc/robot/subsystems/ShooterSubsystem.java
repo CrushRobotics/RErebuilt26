@@ -43,7 +43,7 @@ public class ShooterSubsystem extends SubsystemBase {
     // 6.0  = safe competition default
     // 4.0  = very gentle (lowest current spike)
     //
-    private static final double VOLTAGE_RAMP_RATE = 4.0;
+    private static final double VOLTAGE_RAMP_RATE = 6.0;
 
     private final SlewRateLimiter voltageRampLimiter =
         new SlewRateLimiter(VOLTAGE_RAMP_RATE);

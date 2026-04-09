@@ -23,8 +23,8 @@ public class VisionSubsystem extends SubsystemBase {
     // -------------------------------------------------------------------------
     // TODO: Replace placeholder camera names with the actual hostnames from PhotonVision
     // -------------------------------------------------------------------------
-    private static final String CAMERA_1_NAME = "Placeholder 1";
-    private static final String CAMERA_2_NAME = "Placeholder 2";
+    private static final String CAMERA_1_NAME = "ShooterCamera";
+    private static final String CAMERA_2_NAME = "BackwardsCamera";
     private static final String CAMERA_3_NAME = "Placeholder 3";
 
     // -------------------------------------------------------------------------
@@ -41,8 +41,8 @@ public class VisionSubsystem extends SubsystemBase {
 
     private final CommandSwerveDrivetrain drivetrain;
 
-    private final PhotonCamera camera1 = new PhotonCamera(CAMERA_1_NAME);
-    private final PhotonCamera camera2 = new PhotonCamera(CAMERA_2_NAME);
+    private final PhotonCamera camera1 = new PhotonCamera("ShooterCamera");
+    private final PhotonCamera camera2 = new PhotonCamera("BackwardsCamera");
     private final PhotonCamera camera3 = new PhotonCamera(CAMERA_3_NAME);
 
     private final AprilTagFieldLayout fieldLayout;
@@ -54,7 +54,6 @@ public class VisionSubsystem extends SubsystemBase {
     public VisionSubsystem(CommandSwerveDrivetrain drivetrain) {
         this.drivetrain = drivetrain;
 
-        // Build AprilTagFieldLayout from FieldConstants map
         List<AprilTag> tags = new ArrayList<>();
         FieldConstants.APRIL_TAG_FIELD_LAYOUT.forEach((id, pose) ->
             tags.add(new AprilTag(id, pose))
@@ -76,8 +75,8 @@ public class VisionSubsystem extends SubsystemBase {
 
     @Override
     public void periodic() {
-        updateEstimator(estimator1, camera1, "Camera1");
-        updateEstimator(estimator2, camera2, "Camera2");
+        updateEstimator(estimator1, camera1, "ShooterCamera");
+        updateEstimator(estimator2, camera2, "BackwardsCamera");
         updateEstimator(estimator3, camera3, "Camera3");
     }
 

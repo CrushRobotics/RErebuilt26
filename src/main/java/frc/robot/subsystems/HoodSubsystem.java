@@ -41,7 +41,7 @@ public class HoodSubsystem extends SubsystemBase {
         
         // --- PID Constants ---
         // Increased kP from 0.02 to 0.1 to provide enough torque to lift the hood
-        config.closedLoop.pid(0.1, 0.0, 0.0);
+        config.closedLoop.pid(0.5, 0.0, 0.0);
         
         // --- Trapezoidal PID Configuration (REV MAXMotion) ---
         config.closedLoop.maxMotion.maxVelocity(180); // Degrees per second

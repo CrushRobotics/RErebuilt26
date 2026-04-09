@@ -37,15 +37,14 @@ public class RobotContainer {
     private double MaxAngularRate = RotationsPerSecond.of(1.5).in(RadiansPerSecond); 
 
     private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric().withDriveRequestType(DriveRequestType.Velocity);
-    // Added back the heading controller for auto-aiming
     private final SwerveRequest.FieldCentricFacingAngle autoAimDrive = new SwerveRequest.FieldCentricFacingAngle().withDriveRequestType(DriveRequestType.Velocity);
     
-    private final CommandXboxController joystick = new CommandXboxController(0);
+    // Controllers
+    private final CommandXboxController joystick = new CommandXboxController(0); // Driver
+    private final CommandXboxController operatorController = new CommandXboxController(1); // Operator
 
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
     
-    // NOTE: If you are testing CAMERALESS on blocks, you can temporarily change this to:
-    // private final VisionSubsystem vision = null;
     @SuppressWarnings("unused")
     private final VisionSubsystem vision = RobotBase.isReal() ? new VisionSubsystem(drivetrain) : null;
     
@@ -83,14 +82,13 @@ public class RobotContainer {
             drivetrain.applyRequest(() -> {
                 double rotAxis = RobotBase.isSimulation() ? joystick.getHID().getRawAxis(3) : joystick.getRightX();
                 
-                // Increased the rotational deadband from 0.1 to 0.15 to reject Xbox controller stick drift
                 return drive.withVelocityX(-MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed)
                     .withVelocityY(-MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed)
                     .withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.15) * MaxAngularRate);
             })
         );
 
-        // --- ADAPTIVE PRE-SPIN TOGGLE (B BUTTON) ---
+        // --- ADAPTIVE PRE-SPIN TOGGLE (DRIVER B BUTTON) ---
         joystick.b().toggleOnTrue(
             Commands.run(() -> {
                 Pose2d currentPose = drivetrain.getState().Pose;
@@ -101,19 +99,13 @@ public class RobotContainer {
                     var state = drivetrain.getState();
                     
                     FiringSolution solution = BallisticSolver.solveShot(
-                        currentPose, 
-                        targetHub, 
-                        state.Speeds.vxMetersPerSecond, 
-                        state.Speeds.vyMetersPerSecond, 
-                        FieldConstants.ROBOT_SHOOTER_HEIGHT_METERS
+                        currentPose, targetHub, state.Speeds.vxMetersPerSecond, state.Speeds.vyMetersPerSecond, FieldConstants.ROBOT_SHOOTER_HEIGHT_METERS
                     );
 
                     if (solution != null) {
                         hood.setTargetAngle(Rotation2d.fromDegrees(solution.hoodAimAngle));
                         shooter.setTargetVelocity(solution.shotVelocityMps);
                         DogLog.log("Shooter/PreSpinActive", true);
-                        
-                        // Log exactly what the math is outputting so you can verify if the Solver is static
                         DogLog.log("Shooter/Solver_Raw_VelocityMPS", solution.shotVelocityMps);
                     }
                 }
@@ -124,11 +116,9 @@ public class RobotContainer {
             })
         );
 
-        // --- AUTO-AIM / LOCK ONTO HUB (A BUTTON) ---
-        // Holding A now calculates the shot, rotates the drivetrain to aim, AND revs the shooter/hood simultaneously.
+        // --- AUTO-AIM / LOCK ONTO HUB (DRIVER A BUTTON) ---
         joystick.a().whileTrue(
             Commands.parallel(
-                // 1. Drivetrain Aiming Logic
                 drivetrain.applyRequest(() -> {
                     double xVel = -MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed;
                     double yVel = -MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed;
@@ -153,7 +143,6 @@ public class RobotContainer {
                     return drive.withVelocityX(xVel).withVelocityY(yVel).withRotationalRate(0);
                 }),
                 
-                // 2. Shooter & Hood Aiming Logic
                 Commands.run(() -> {
                     Pose2d currentPose = drivetrain.getState().Pose;
                     Alliance alliance = DriverStation.getAlliance().orElse(RobotBase.isSimulation() ? Alliance.Blue : null);
@@ -169,8 +158,6 @@ public class RobotContainer {
                         if (solution != null) {
                             hood.setTargetAngle(Rotation2d.fromDegrees(solution.hoodAimAngle));
                             shooter.setTargetVelocity(solution.shotVelocityMps);
-                            
-                            // Log exactly what the math is outputting
                             DogLog.log("Shooter/Solver_Raw_VelocityMPS", solution.shotVelocityMps);
                         }
                     }
@@ -178,68 +165,73 @@ public class RobotContainer {
             )
         ).onFalse(Commands.runOnce(() -> shooter.stop(), shooter));
 
-        // --- FIRE BUTTON (RIGHT BUMPER) ---
+        // --- FIRE BUTTON (DRIVER RIGHT BUMPER) ---
         joystick.rightBumper().whileTrue(
-            Commands.run(() -> {
-                indexer.feedAllBalls();
-            }, indexer)
+            Commands.run(() -> indexer.feedAllBalls(), indexer)
         ).onFalse(
-            Commands.runOnce(() -> {
-                indexer.stopFeeder();
-            }, indexer)
+            Commands.runOnce(() -> indexer.stopFeeder(), indexer)
         );
 
-        // --- INTAKE PIVOT (LEFT BUMPER) ---
+        // --- INTAKE PIVOT (DRIVER LEFT BUMPER) ---
         joystick.leftBumper().whileTrue(
-            Commands.run(() -> {
-                // For testing with the 111:1 ratio, using the open-loop test method
-                intake.setPivotSpeed(1.0); 
-            }, intake)
+            Commands.run(() -> intake.setPivotSpeed(1.0), intake)
         ).onFalse(
-            Commands.runOnce(() -> {
-                intake.stopAll(); 
-            }, intake)
+            Commands.runOnce(() -> intake.stopAll(), intake)
         );
 
-        // --- MANUAL SHOOTER TEST (X BUTTON) ---
+        // --- MANUAL SHOOTER TEST (DRIVER X BUTTON) ---
         joystick.x().whileTrue(
-            Commands.run(() -> {
-                shooter.setTargetVelocity(15.0); // 15 m/s test speed
-            }, shooter)
+            Commands.run(() -> shooter.setTargetVelocity(15.0), shooter)
         ).onFalse(
             Commands.runOnce(() -> shooter.stop(), shooter)
         );
 
-        // --- INTAKE ROLLERS (Y BUTTON TOGGLE) ---
-        // (Fixed syntax issue here)
+        // --- INTAKE ROLLERS (DRIVER Y BUTTON TOGGLE) ---
         joystick.y().toggleOnTrue(
-            Commands.run(() -> {
-                intake.runIntakeRollers();
-            }, intake)
-            .finallyDo(() -> {
-                intake.stopIntakeRollers();
-            })
+            Commands.run(() -> intake.runIntakeRollers(), intake)
+            .finallyDo(() -> intake.stopIntakeRollers())
         );
 
-        // --- INTAKE PIVOT PRESETS (D-PAD) ---
-        joystick.povUp().onTrue(
-            Commands.runOnce(() -> intake.retract(), intake)
-        );
+        // --- INTAKE PIVOT PRESETS (DRIVER D-PAD) ---
+        joystick.povUp().onTrue(Commands.runOnce(() -> intake.retract(), intake));
+        joystick.povDown().onTrue(Commands.runOnce(() -> intake.deploy(), intake));
+        joystick.povLeft().onTrue(Commands.runOnce(() -> intake.halfDeploy(), intake));
 
-        joystick.povDown().onTrue(
-            Commands.runOnce(() -> intake.deploy(), intake)
-        );
-
-        joystick.povLeft().onTrue(
-            Commands.runOnce(() -> intake.halfDeploy(), intake)
-        );
-
-        // --- CALIBRATION BINDING (BACK BUTTON) ---
-        // Restored exactly as it was requested
+        // --- CALIBRATION BINDING (DRIVER BACK BUTTON) ---
         joystick.back().onTrue(drivetrain.runOnce(() -> {
             Pose2d startPose = new Pose2d(4.047, 0.629, Rotation2d.fromDegrees(-5.540));
             drivetrain.resetPose(startPose);
         }));
+
+        // =========================================================
+        // OPERATOR CONTROLS
+        // =========================================================
+
+        // --- MANUAL HOOD CONTROL (OPERATOR D-PAD) ---
+        // Holding up/down on the operator D-pad continuously adjusts the hood angle
+        operatorController.povUp().whileTrue(
+            Commands.run(() -> hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() + 1.0)), hood) 
+        );
+
+        operatorController.povDown().whileTrue(
+            Commands.run(() -> hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() - 1.0)), hood) 
+        );
+
+        // --- CLIMBER CONTROL (OPERATOR BUMPERS & TRIGGERS) ---
+        
+        // Left Bumper extends the climber (raises manually at 50% power)
+        operatorController.leftBumper().whileTrue(
+            Commands.run(() -> climber.setPower(0.5), climber)
+        ).onFalse(
+            Commands.runOnce(() -> climber.stop(), climber)
+        );
+
+        // Left Trigger retracts the climber (lowers manually at 50% power)
+        operatorController.leftTrigger().whileTrue(
+            Commands.run(() -> climber.setPower(-0.5), climber)
+        ).onFalse(
+            Commands.runOnce(() -> climber.stop(), climber)
+        );
     }
 
     public void updateTelemetry() {
@@ -247,20 +239,14 @@ public class RobotContainer {
             logger.telemeterizeMechanisms(hood.getCurrentAngleDegrees(), indexer.getPositionRotations(), shooter.getPositionRotations(), climber.getExtensionMeters());
             
             // --- SIMULATOR CONTROLLER LOGGING ---
-            DogLog.log("Controller/ButtonA_Held", joystick.getHID().getAButton());
-            DogLog.log("Controller/ButtonB_Held", joystick.getHID().getBButton());
-            DogLog.log("Controller/ButtonX_Held", joystick.getHID().getXButton());
-            DogLog.log("Controller/ButtonY_Held", joystick.getHID().getYButton());
-            DogLog.log("Controller/RightBumper_Held", joystick.getHID().getRightBumper());
-            DogLog.log("Controller/LeftBumper_Held", joystick.getHID().getLeftBumper());
-            DogLog.log("Controller/BackButton_Held", joystick.getHID().getBackButton());
-            DogLog.log("Controller/POV_Up", joystick.getHID().getPOV() == 0);
-            DogLog.log("Controller/POV_Down", joystick.getHID().getPOV() == 180);
-            DogLog.log("Controller/POV_Left", joystick.getHID().getPOV() == 270);
+            DogLog.log("Controller/Driver/ButtonA_Held", joystick.getHID().getAButton());
+            DogLog.log("Controller/Driver/ButtonB_Held", joystick.getHID().getBButton());
+            DogLog.log("Controller/Driver/POV_Up", joystick.getHID().getPOV() == 0);
             
-            DogLog.log("Controller/LeftY_Axis", joystick.getLeftY());
-            DogLog.log("Controller/LeftX_Axis", joystick.getLeftX());
-            DogLog.log("Controller/RightX_Axis", joystick.getRightX());
+            DogLog.log("Controller/Operator/POV_Up", operatorController.getHID().getPOV() == 0);
+            DogLog.log("Controller/Operator/POV_Down", operatorController.getHID().getPOV() == 180);
+            DogLog.log("Controller/Operator/LeftBumper_Held", operatorController.getHID().getLeftBumper());
+            DogLog.log("Controller/Operator/LeftTrigger_Held", operatorController.getLeftTriggerAxis() > 0.5);
             
         } catch (Exception e) {}
     }

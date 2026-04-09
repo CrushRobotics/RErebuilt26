@@ -1,87 +1,70 @@
 package frc.robot.subsystems;
 
-import com.revrobotics.RelativeEncoder;
 import com.revrobotics.spark.SparkMax;
-import com.revrobotics.spark.SparkLowLevel.MotorType;
-import com.revrobotics.spark.config.SparkMaxConfig;
-import com.revrobotics.spark.SparkClosedLoopController;
-import com.revrobotics.spark.SparkBase.ControlType;
 import com.revrobotics.spark.SparkBase.PersistMode;
 import com.revrobotics.spark.SparkBase.ResetMode;
+import com.revrobotics.spark.SparkLowLevel.MotorType;
+import com.revrobotics.spark.config.SparkMaxConfig;
+import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
+import com.revrobotics.RelativeEncoder;
 
 import dev.doglog.DogLog;
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 public class ClimberSubsystem extends SubsystemBase {
-    // Hardware constraints
-    private static final int CLIMBER_MOTOR_ID = 1; 
+    private static final int CLIMBER_MOTOR_ID = 15;
     
-    // The strict hardware limits the motor will not go past (in rotations)
-    private static final float MAX_EXTENSION_ROTATIONS = 100.0f; 
-    private static final float MIN_EXTENSION_ROTATIONS = 0.0f;
-
     private final SparkMax climberMotor;
-    private final RelativeEncoder climberEncoder;
-    private final SparkClosedLoopController climberPid;
-
+    private final RelativeEncoder encoder;
+    
+    // Example ratio: 25:1 gearbox, spool diameter 1.5 inches
+    // Adjust these to match your physical robot!
+    private static final double GEAR_RATIO = 25.0;
+    private static final double SPOOL_CIRCUMFERENCE_METERS = 0.0381 * Math.PI; // 1.5 inch dia
+    
     public ClimberSubsystem() {
-        // Using the new SparkMax API (Not CANSparkMax)
         climberMotor = new SparkMax(CLIMBER_MOTOR_ID, MotorType.kBrushless);
         
         SparkMaxConfig config = new SparkMaxConfig();
         
-        // --- PID Constants ---
-        config.closedLoop.pid(0.1, 0.0, 0.0);
+        // Brake mode is critical here so the robot doesn't instantly fall when you release the trigger
+        config.idleMode(IdleMode.kBrake); 
+        config.smartCurrentLimit(40); // Climbers need torque, but protect the motor from burning out
         
-        // --- Trapezoidal PID Configuration (REV MAXMotion) ---
-        // This generates a smooth trapezoidal curve during movement
-        config.closedLoop.maxMotion.maxVelocity(2000); // Maximum speed during travel (RPM)
-        config.closedLoop.maxMotion.maxAcceleration(4000); // Speed up/slow down rate (RPM/s)
-        config.closedLoop.maxMotion.allowedClosedLoopError(0.5);
+        // Convert rotations to linear meters for telemetry
+        config.encoder.positionConversionFactor(SPOOL_CIRCUMFERENCE_METERS / GEAR_RATIO);
+        config.encoder.velocityConversionFactor((SPOOL_CIRCUMFERENCE_METERS / GEAR_RATIO) / 60.0);
         
-        // --- Physical Hardware Limits ---
-        config.softLimit
-            .forwardSoftLimit(MAX_EXTENSION_ROTATIONS)
-            .forwardSoftLimitEnabled(true)
-            .reverseSoftLimit(MIN_EXTENSION_ROTATIONS)
-            .reverseSoftLimitEnabled(true);
-        
-        // Apply configurations to the controller
         climberMotor.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
         
-        climberEncoder = climberMotor.getEncoder();
-        climberPid = climberMotor.getClosedLoopController();
+        encoder = climberMotor.getEncoder();
+        
+        encoder.setPosition(0);
     }
 
     /**
-     * Drives the climber to a specific position using the Trapezoidal profile.
-     * @param targetRotations Position to move to.
+     * Directly sets the motor power output for manual control.
+     * @param power Power from -1.0 to 1.0
      */
-    public void setTargetPosition(double targetRotations) {
-        // ControlType.kMAXMotionPositionControl utilizes the trapezoidal profile limits
-        climberPid.setReference(targetRotations, ControlType.kMAXMotionPositionControl);
-        DogLog.log("Climber/TargetRotations", targetRotations);
-        SmartDashboard.putNumber("Climber/TargetRotations", targetRotations);
+    public void setPower(double power) {
+        climberMotor.set(power);
     }
-    
-    /**
-     * Immediately stops the climber motor.
-     */
+
+    public double getExtensionMeters() {
+        return encoder.getPosition();
+    }
+
     public void stop() {
         climberMotor.stopMotor();
     }
 
-    /**
-     * Gets the current extension value for telemetry.
-     */
-    public double getExtensionMeters() {
-        return climberEncoder.getPosition();
-    }
-
     @Override
     public void periodic() {
-        DogLog.log("Climber/CurrentRotations", climberEncoder.getPosition());
-        SmartDashboard.putNumber("Climber/CurrentRotations", climberEncoder.getPosition());
+        // We are no longer feeding a PID reference here, so the manual setPower() calls 
+        // from the CommandXboxController bindings will work without interference.
+        
+        DogLog.log("Climber/CurrentMeters", getExtensionMeters());
+        DogLog.log("Climber/OutputAmps", climberMotor.getOutputCurrent());
+        DogLog.log("Climber/AppliedOutput", climberMotor.getAppliedOutput());
     }
 }

@@ -54,6 +54,10 @@ public class IndexerSubsystem extends SubsystemBase {
 
     public void feedShooter() { setSpeed(0.8); }
     public void feedAllBalls() { feedShooter(); }
+    
+    // (New) Reverses the feeder to unjam
+    public void reverseFeeder() { setSpeed(-0.8); }
+    
     public void stop() { setSpeed(0.0); }
     public void stopFeeder() { stop(); }
 

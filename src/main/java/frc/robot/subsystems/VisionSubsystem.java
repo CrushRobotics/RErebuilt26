@@ -12,9 +12,13 @@ import org.photonvision.PhotonPoseEstimator.PoseStrategy;
 import dev.doglog.DogLog;
 import edu.wpi.first.apriltag.AprilTag;
 import edu.wpi.first.apriltag.AprilTagFieldLayout;
+import edu.wpi.first.math.Matrix;
+import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
+import edu.wpi.first.math.numbers.N1;
+import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.FieldConstants;
 
@@ -32,9 +36,9 @@ public class VisionSubsystem extends SubsystemBase {
     // Transform3d = robot center -> camera (x forward, y left, z up, in meters)
     // -------------------------------------------------------------------------
     private static final Transform3d CAMERA_1_TRANSFORM = new Transform3d(
-        new Translation3d(0.27, 0.0, 0.0), new Rotation3d(0, 28, 0)); 
+        new Translation3d(0.27, 0.0, 0.0), new Rotation3d(0, Math.toRadians(28), 0)); 
     private static final Transform3d CAMERA_2_TRANSFORM = new Transform3d(
-        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 28, 0)); 
+        new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, Math.toRadians(28), 0)); 
     private static final Transform3d CAMERA_3_TRANSFORM = new Transform3d(
         new Translation3d(0.0, 0.0, 0.0), new Rotation3d(0, 0, 0)); 
     // -------------------------------------------------------------------------
@@ -90,12 +94,28 @@ public class VisionSubsystem extends SubsystemBase {
                 if (pose.getX() < 0 || pose.getX() > FieldConstants.FIELD_LENGTH_METERS) return;
                 if (pose.getY() < 0 || pose.getY() > FieldConstants.FIELD_WIDTH_METERS) return;
 
-                drivetrain.addVisionMeasurement(pose, est.timestampSeconds);
+                // Dynamically calculate standard deviations based on distance and tag count.
+                // This forces the Swerve Drive Pose Estimator to actually trust and use the vision data.
+                double avgDist = 0;
+                for (var target : result.getTargets()) {
+                    avgDist += target.getBestCameraToTarget().getTranslation().getNorm();
+                }
+                avgDist /= result.getTargets().size();
+
+                // Base trust + penalty for distance, divided by the number of tags seen (more tags = higher trust)
+                double xyStdDev = 0.05 + (avgDist * avgDist * 0.1) / result.getTargets().size();
+                double thetaStdDev = 0.1 + (avgDist * avgDist * 0.2) / result.getTargets().size();
+                
+                Matrix<N3, N1> stdDevs = VecBuilder.fill(xyStdDev, xyStdDev, thetaStdDev);
+
+                // Update the Phoenix 6 drivetrain with standard deviations
+                drivetrain.addVisionMeasurement(pose, est.timestampSeconds, stdDevs);
 
                 DogLog.log("Vision/" + label + "/PoseX", pose.getX());
                 DogLog.log("Vision/" + label + "/PoseY", pose.getY());
                 DogLog.log("Vision/" + label + "/PoseYawDeg", pose.getRotation().getDegrees());
                 DogLog.log("Vision/" + label + "/TagCount", est.targetsUsed.size());
+                DogLog.log("Vision/" + label + "/AvgDistanceMeters", avgDist);
             });
         }
     }

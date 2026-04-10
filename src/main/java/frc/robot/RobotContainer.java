@@ -36,8 +36,8 @@ public class RobotContainer {
     private double MaxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
     private double MaxAngularRate = RotationsPerSecond.of(1.5).in(RadiansPerSecond); 
 
-    private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric().withDriveRequestType(DriveRequestType.Velocity);
-    private final SwerveRequest.FieldCentricFacingAngle autoAimDrive = new SwerveRequest.FieldCentricFacingAngle().withDriveRequestType(DriveRequestType.Velocity);
+    private final SwerveRequest.RobotCentric drive = new SwerveRequest.RobotCentric().withDriveRequestType(DriveRequestType.Velocity);
+    private final SwerveRequest.RobotCentricFacingAngle autoAimDrive = new SwerveRequest.RobotCentricFacingAngle().withDriveRequestType(DriveRequestType.Velocity);
     
     // Controllers
     private final CommandXboxController joystick = new CommandXboxController(0); // Driver
@@ -117,7 +117,7 @@ public class RobotContainer {
         );
 
         // --- AUTO-AIM / LOCK ONTO HUB (DRIVER A BUTTON) ---
-        joystick.a().whileTrue(
+        operatorController.a().whileTrue(
             Commands.parallel(
                 drivetrain.applyRequest(() -> {
                     double xVel = -MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed;
@@ -166,7 +166,7 @@ public class RobotContainer {
         ).onFalse(Commands.runOnce(() -> shooter.stop(), shooter));
 
         // --- FIRE BUTTON (DRIVER RIGHT BUMPER) ---
-        joystick.rightBumper().whileTrue(
+        operatorController.rightBumper().whileTrue(
             Commands.run(() -> indexer.feedAllBalls(), indexer)
         ).onFalse(
             Commands.runOnce(() -> indexer.stopFeeder(), indexer)
@@ -180,7 +180,7 @@ public class RobotContainer {
         );
 
         // --- MANUAL SHOOTER TEST (DRIVER X BUTTON) ---
-        joystick.x().whileTrue(
+        operatorController.x().whileTrue(
             Commands.run(() -> shooter.setTargetVelocity(15.0), shooter)
         ).onFalse(
             Commands.runOnce(() -> shooter.stop(), shooter)
@@ -198,7 +198,7 @@ public class RobotContainer {
         joystick.povLeft().onTrue(Commands.runOnce(() -> intake.halfDeploy(), intake));
 
         // --- CALIBRATION BINDING (DRIVER BACK BUTTON) ---
-        joystick.back().onTrue(drivetrain.runOnce(() -> {
+        operatorController.b().onTrue(drivetrain.runOnce(() -> {
             Pose2d startPose = new Pose2d(4.047, 0.629, Rotation2d.fromDegrees(-5.540));
             drivetrain.resetPose(startPose);
         }));
@@ -210,11 +210,11 @@ public class RobotContainer {
         // --- MANUAL HOOD CONTROL (OPERATOR D-PAD) ---
         // Holding up/down on the operator D-pad continuously adjusts the hood angle
         operatorController.povUp().whileTrue(
-            Commands.run(() -> hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() + 1.0)), hood) 
+            Commands.run(() -> hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() + 5.0)), hood) 
         );
 
         operatorController.povDown().whileTrue(
-            Commands.run(() -> hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() - 1.0)), hood) 
+            Commands.run(() -> hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() - 5.0)), hood) 
         );
 
         // --- CLIMBER CONTROL (OPERATOR BUMPERS & TRIGGERS) ---

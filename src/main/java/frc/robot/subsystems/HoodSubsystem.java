@@ -20,7 +20,10 @@ public class HoodSubsystem extends SubsystemBase {
     private final SparkMax hoodMotor;
     private final RelativeEncoder encoder;
     private final SparkClosedLoopController hoodPid;
+    
     private Rotation2d targetAngle = Rotation2d.fromDegrees(0.0);
+    private boolean isManualStop = false; // Flag to prevent PID from overriding the stop command
+    
     // High reduction gearbox (Typical for hoods)
     private static final double GEAR_RATIO = 420.0; 
     
@@ -34,18 +37,20 @@ public class HoodSubsystem extends SubsystemBase {
         
         // Brake mode is essential to stop the hood from falling under its own weight
         config.idleMode(IdleMode.kBrake);
+        
+        // Invert the motor direction so 'up' goes the correct way
+        config.inverted(true);
 
         // Convert NEO rotations directly to Hood Degrees
         config.encoder.positionConversionFactor(360.0 / GEAR_RATIO); 
         config.encoder.velocityConversionFactor((360.0 / GEAR_RATIO) / 60.0);
         
         // --- PID Constants ---
-        // Increased kP from 0.02 to 0.1 to provide enough torque to lift the hood
-        config.closedLoop.pid(0.5, 0.0, 0.0);
+        // Increased kP significantly from 0.1 to 0.5 to make it snap to position much faster
+        config.closedLoop.pid(2.0, 0.0, 0.0);
         
-        // --- Trapezoidal PID Configuration (REV MAXMotion) ---
-        config.closedLoop.maxMotion.maxVelocity(180); // Degrees per second
-        config.closedLoop.maxMotion.maxAcceleration(360); // Degrees per second squared
+        
+        config.closedLoop.maxMotion.maxAcceleration(1000); // Degrees per second squared (up from 360)
         config.closedLoop.maxMotion.allowedClosedLoopError(POSITION_TOLERANCE_DEGREES);
         
         // Apply configuration to the SparkMax
@@ -59,6 +64,7 @@ public class HoodSubsystem extends SubsystemBase {
     }
 
     public void setTargetAngle(Rotation2d angle) {
+        isManualStop = false; // Reset the manual stop flag when a new target is commanded
         targetAngle = angle;
     }
 
@@ -74,17 +80,27 @@ public class HoodSubsystem extends SubsystemBase {
         return encoder.getPosition();
     }
 
+    /** * Immediately cuts power to the hood motor and flags the PID to stop updating. 
+     */
+    public void stop() {
+        isManualStop = true;
+        hoodMotor.stopMotor();
+    }
+
     @Override
     public void periodic() {
-        // Feed the target to the Spark Max's internal 1000Hz hardware loop
-        hoodPid.setReference(targetAngle.getDegrees(), ControlType.kMAXMotionPositionControl);
+        // Only feed the target to the Spark Max if the manual stop hasn't been triggered
+        if (!isManualStop) {
+            hoodPid.setReference(targetAngle.getDegrees(), ControlType.kMAXMotionPositionControl);
+        }
 
         // Telemetry
         DogLog.log("Hood/TargetAngleDeg", targetAngle.getDegrees());
         DogLog.log("Hood/CurrentAngleDeg", getCurrentAngleDegrees());
         DogLog.log("Hood/AtTarget", isAtAngle(targetAngle));
+        DogLog.log("Hood/IsManualStopped", isManualStop);
 
-        // SmartDashboard debugging (Watch these values while pressing A or B!)
+        // SmartDashboard debugging
         SmartDashboard.putNumber("Hood/TargetAngle", targetAngle.getDegrees());
         SmartDashboard.putNumber("Hood/CurrentAngle", getCurrentAngleDegrees());
         SmartDashboard.putNumber("Hood/Output", hoodMotor.getAppliedOutput());

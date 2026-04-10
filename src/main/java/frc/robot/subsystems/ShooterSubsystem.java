@@ -15,8 +15,6 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 public class ShooterSubsystem extends SubsystemBase {
-
-    // Top motor (ID 12) and Bottom motor (ID 13) on the "crushswerve" CANivore
     private final TalonFX topMotor    = new TalonFX(12, "CrushSwerve");
     private final TalonFX bottomMotor = new TalonFX(13, "CrushSwerve");
 

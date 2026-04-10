@@ -36,8 +36,9 @@ public class RobotContainer {
     private double MaxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
     private double MaxAngularRate = RotationsPerSecond.of(1.5).in(RadiansPerSecond); 
 
-    private final SwerveRequest.RobotCentric drive = new SwerveRequest.RobotCentric().withDriveRequestType(DriveRequestType.Velocity);
-    private final SwerveRequest.RobotCentricFacingAngle autoAimDrive = new SwerveRequest.RobotCentricFacingAngle().withDriveRequestType(DriveRequestType.Velocity);
+    // Changed to FieldCentric per driver preference (Does NOT affect Auto routines)
+    private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric().withDriveRequestType(DriveRequestType.Velocity);
+    private final SwerveRequest.FieldCentricFacingAngle autoAimDrive = new SwerveRequest.FieldCentricFacingAngle().withDriveRequestType(DriveRequestType.Velocity);
     
     // Controllers
     private final CommandXboxController joystick = new CommandXboxController(0); // Driver
@@ -84,7 +85,7 @@ public class RobotContainer {
                 
                 return drive.withVelocityX(-MathUtil.applyDeadband(joystick.getLeftY(), 0.1) * MaxSpeed)
                     .withVelocityY(-MathUtil.applyDeadband(joystick.getLeftX(), 0.1) * MaxSpeed)
-                    .withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.15) * MaxAngularRate);
+                    .withRotationalRate(-MathUtil.applyDeadband(rotAxis, 0.1) * MaxAngularRate);
             })
         );
 
@@ -165,7 +166,7 @@ public class RobotContainer {
             )
         ).onFalse(Commands.runOnce(() -> shooter.stop(), shooter));
 
-        // --- FIRE BUTTON (DRIVER RIGHT BUMPER) ---
+        // --- FIRE BUTTON (OPERATOR RIGHT BUMPER) ---
         operatorController.rightBumper().whileTrue(
             Commands.run(() -> indexer.feedAllBalls(), indexer)
         ).onFalse(
@@ -179,7 +180,7 @@ public class RobotContainer {
             Commands.runOnce(() -> intake.stopAll(), intake)
         );
 
-        // --- MANUAL SHOOTER TEST (DRIVER X BUTTON) ---
+        // --- MANUAL SHOOTER TEST (OPERATOR X BUTTON) ---
         operatorController.x().whileTrue(
             Commands.run(() -> shooter.setTargetVelocity(15.0), shooter)
         ).onFalse(
@@ -197,7 +198,7 @@ public class RobotContainer {
         joystick.povDown().onTrue(Commands.runOnce(() -> intake.deploy(), intake));
         joystick.povLeft().onTrue(Commands.runOnce(() -> intake.halfDeploy(), intake));
 
-        // --- CALIBRATION BINDING (DRIVER BACK BUTTON) ---
+        // --- CALIBRATION BINDING (OPERATOR BACK BUTTON) ---
         operatorController.b().onTrue(drivetrain.runOnce(() -> {
             Pose2d startPose = new Pose2d(4.047, 0.629, Rotation2d.fromDegrees(-5.540));
             drivetrain.resetPose(startPose);
@@ -208,7 +209,6 @@ public class RobotContainer {
         // =========================================================
 
         // --- MANUAL HOOD CONTROL (OPERATOR D-PAD) ---
-        // Holding up/down on the operator D-pad continuously adjusts the hood angle
         operatorController.povUp().whileTrue(
             Commands.run(() -> hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() + 5.0)), hood) 
         );
@@ -217,17 +217,23 @@ public class RobotContainer {
             Commands.run(() -> hood.setTargetAngle(Rotation2d.fromDegrees(hood.getTargetAngle().getDegrees() - 5.0)), hood) 
         );
 
-        // --- CLIMBER CONTROL (OPERATOR BUMPERS & TRIGGERS) ---
-        
-        // Left Bumper extends the climber (raises manually at 50% power)
-        operatorController.leftBumper().whileTrue(
+        // --- INDEXER REVERSE / UNJAM (OPERATOR LEFT BUMPER) ---
+        // Toggles the indexer backward. Pressing the Right Bumper (Fire) requires 
+        // the same subsystem, so firing will seamlessly interrupt this and unjam.
+        operatorController.leftBumper().toggleOnTrue(
+            Commands.run(() -> indexer.reverseFeeder(), indexer)
+        );
+
+        // --- CLIMBER CONTROL (OPERATOR TRIGGERS) ---
+        // Left Trigger extends the climber (raises manually at 50% power)
+        operatorController.leftTrigger().whileTrue(
             Commands.run(() -> climber.setPower(0.5), climber)
         ).onFalse(
             Commands.runOnce(() -> climber.stop(), climber)
         );
 
-        // Left Trigger retracts the climber (lowers manually at 50% power)
-        operatorController.leftTrigger().whileTrue(
+        // Right Trigger retracts the climber (lowers manually at 50% power)
+        operatorController.rightTrigger().whileTrue(
             Commands.run(() -> climber.setPower(-0.5), climber)
         ).onFalse(
             Commands.runOnce(() -> climber.stop(), climber)

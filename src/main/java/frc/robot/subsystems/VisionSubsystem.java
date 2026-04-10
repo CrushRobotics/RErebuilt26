@@ -19,6 +19,7 @@ import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.FieldConstants;
 
@@ -110,6 +111,11 @@ public class VisionSubsystem extends SubsystemBase {
 
                 // Update the Phoenix 6 drivetrain with standard deviations
                 drivetrain.addVisionMeasurement(pose, est.timestampSeconds, stdDevs);
+
+                // --- SMARTDASHBOARD / ELASTIC INTEGRATION ---
+                // Format the pose into a double array [x, y, degrees] which Elastic natively reads as a Pose2d object
+                double[] poseArray = new double[] { pose.getX(), pose.getY(), pose.getRotation().getDegrees() };
+                SmartDashboard.putNumberArray("Vision/" + label + "/Pose", poseArray);
 
                 DogLog.log("Vision/" + label + "/PoseX", pose.getX());
                 DogLog.log("Vision/" + label + "/PoseY", pose.getY());

@@ -30,10 +30,15 @@ public class IndexerSubsystem extends SubsystemBase {
         SparkMaxConfig feederConfig = new SparkMaxConfig();
         feederConfig.idleMode(IdleMode.kBrake);
         feederConfig.inverted(false); 
+        feederConfig.smartCurrentLimit(30); // Prevent battery voltage sag
+        feederConfig.voltageCompensation(12.0); // Calibrate voltage
         
         // --- Ground Bars Configuration ---
         SparkMaxConfig groundBarsConfig = new SparkMaxConfig();
         groundBarsConfig.idleMode(IdleMode.kBrake);
+        groundBarsConfig.smartCurrentLimit(30); // Prevent battery voltage sag
+        groundBarsConfig.voltageCompensation(12.0); // Calibrate voltage
+        
         // By inverting the ground bars in the configuration, we can send both motors 
         // the exact same speed command and they will physically spin in opposite directions.
         groundBarsConfig.inverted(true);
@@ -55,7 +60,7 @@ public class IndexerSubsystem extends SubsystemBase {
     public void feedShooter() { setSpeed(0.8); }
     public void feedAllBalls() { feedShooter(); }
     
-    // (New) Reverses the feeder to unjam
+    // Reverses the feeder to unjam
     public void reverseFeeder() { setSpeed(-0.8); }
     
     public void stop() { setSpeed(0.0); }

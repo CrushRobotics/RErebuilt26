@@ -55,13 +55,26 @@ public class TunerConstants {
 
     // Initial configs for the drive and steer motors and the azimuth encoder; these cannot be null.
     // Some configs will be overwritten; check the `with*InitialConfigs()` API documentation.
-    private static final TalonFXConfiguration driveInitialConfigs = new TalonFXConfiguration();
+    private static final TalonFXConfiguration driveInitialConfigs = new TalonFXConfiguration()
+        .withCurrentLimits(
+            new CurrentLimitsConfigs()
+                // HIGH PERFORMANCE FIX: Increased Supply limit to 80A to allow for aggressive acceleration bursts.
+                // The 120A main breaker can easily handle these brief transient spikes without tripping.
+                .withSupplyCurrentLimit(80)
+                .withSupplyCurrentLimitEnable(true)
+                // Stator limit caps the actual torque to prevent wheel slip and battery voltage collapse
+                // at low speeds (when Supply Current is naturally low but Stator Current spikes wildly).
+                .withStatorCurrentLimit(120)
+                .withStatorCurrentLimitEnable(true)
+        );
     private static final TalonFXConfiguration steerInitialConfigs = new TalonFXConfiguration()
         .withCurrentLimits(
             new CurrentLimitsConfigs()
                 // Swerve azimuth does not require much torque output, so we can set a relatively low
                 // stator current limit to help avoid brownouts without impacting performance.
-                .withStatorCurrentLimit(Amps.of(60))
+                .withSupplyCurrentLimit(30)
+                .withSupplyCurrentLimitEnable(true)
+                .withStatorCurrentLimit(60)
                 .withStatorCurrentLimitEnable(true)
         );
     private static final CANcoderConfiguration encoderInitialConfigs = new CANcoderConfiguration();
@@ -235,8 +248,8 @@ public class TunerConstants {
          *
          * @param drivetrainConstants     Drivetrain-wide constants for the swerve drive
          * @param odometryUpdateFrequency The frequency to run the odometry loop. If
-         *                                unspecified or set to 0 Hz, this is 250 Hz on
-         *                                CAN FD, and 100 Hz on CAN 2.0.
+         * unspecified or set to 0 Hz, this is 250 Hz on
+         * CAN FD, and 100 Hz on CAN 2.0.
          * @param modules                 Constants for each specific module
          */
         public TunerSwerveDrivetrain(
@@ -259,14 +272,14 @@ public class TunerConstants {
          *
          * @param drivetrainConstants       Drivetrain-wide constants for the swerve drive
          * @param odometryUpdateFrequency   The frequency to run the odometry loop. If
-         *                                  unspecified or set to 0 Hz, this is 250 Hz on
-         *                                  CAN FD, and 100 Hz on CAN 2.0.
+         * unspecified or set to 0 Hz, this is 250 Hz on
+         * CAN FD, and 100 Hz on CAN 2.0.
          * @param odometryStandardDeviation The standard deviation for odometry calculation
-         *                                  in the form [x, y, theta]áµ€, with units in meters
-         *                                  and radians
+         * in the form [x, y, theta]áµ€, with units in meters
+         * and radians
          * @param visionStandardDeviation   The standard deviation for vision calculation
-         *                                  in the form [x, y, theta]áµ€, with units in meters
-         *                                  and radians
+         * in the form [x, y, theta]áµ€, with units in meters
+         * and radians
          * @param modules                   Constants for each specific module
          */
         public TunerSwerveDrivetrain(

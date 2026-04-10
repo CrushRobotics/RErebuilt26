@@ -30,6 +30,7 @@ public class ClimberSubsystem extends SubsystemBase {
         // Brake mode is critical here so the robot doesn't instantly fall when you release the trigger
         config.idleMode(IdleMode.kBrake); 
         config.smartCurrentLimit(40); // Climbers need torque, but protect the motor from burning out
+        config.voltageCompensation(12.0); // Added voltage compensation
         
         // Convert rotations to linear meters for telemetry
         config.encoder.positionConversionFactor(SPOOL_CIRCUMFERENCE_METERS / GEAR_RATIO);
@@ -60,9 +61,6 @@ public class ClimberSubsystem extends SubsystemBase {
 
     @Override
     public void periodic() {
-        // We are no longer feeding a PID reference here, so the manual setPower() calls 
-        // from the CommandXboxController bindings will work without interference.
-        
         DogLog.log("Climber/CurrentMeters", getExtensionMeters());
         DogLog.log("Climber/OutputAmps", climberMotor.getOutputCurrent());
         DogLog.log("Climber/AppliedOutput", climberMotor.getAppliedOutput());
